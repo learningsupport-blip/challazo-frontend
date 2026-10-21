@@ -16,7 +16,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://ai-hackathon-evaluator-backend-835728304610.asia-south1.run.app/:path*"
+      "destination": "https://challazo-backend-688782806474.asia-south1.run.app/:path*"
     },
     {
       "source": "/(.*)",
