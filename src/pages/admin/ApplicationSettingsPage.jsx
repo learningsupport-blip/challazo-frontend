@@ -1,0 +1,677 @@
+import { useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { adminApi } from '../../api/admin'
+import { WRAP_APP, EYEBROW, PANEL, MONO } from '../../components/drop/theme'
+import Alert from '../../components/ui/Alert'
+import Button from '../../components/ui/Button'
+import Card, { CardBody, CardHeader } from '../../components/ui/Card'
+import Icon from '../../components/ui/Icon'
+import Input, { PasswordInput } from '../../components/ui/Input'
+import Modal from '../../components/ui/Modal'
+import { LoadingBlock } from '../../components/ui/Spinner'
+import { useAdminPath } from '../../hooks/useAdminPath'
+import ApplicationConfigPanel from '../../components/admin/ApplicationConfigPanel'
+import DeleteHackathonPanel from '../../components/admin/DeleteHackathonPanel'
+
+const PROFILE_FORM = {
+  current_profile_password: '',
+  new_profile_password: '',
+  confirm_new_profile_password: '',
+}
+
+const RESET_FORM = {
+  profile_password: '',
+  confirm_phrase: '',
+}
+
+const RESET_COUNT_META = {
+  hackathons: { label: 'Hackathons', icon: 'trophy', hint: 'Events and schedules' },
+  themes: { label: 'Themes', icon: 'sparkles', hint: 'Challenge themes' },
+  evaluation_requirements: {
+    label: 'Requirements',
+    icon: 'clipboard',
+    hint: 'Submission field sets',
+  },
+  ai_evaluation_metric_scoring: {
+    label: 'Scorecards',
+    icon: 'chart',
+    hint: 'Metric scoring configs',
+  },
+  ai_evaluation_prompts: {
+    label: 'AI prompts',
+    icon: 'spark',
+    hint: 'Checklist & video templates',
+  },
+  ai_evaluation_prompt: {
+    label: 'Legacy AI prompts',
+    icon: 'spark',
+    hint: 'Old singular collection',
+  },
+  submissions: { label: 'Submissions', icon: 'video', hint: 'Student entries' },
+  analysis: { label: 'Analysis', icon: 'file', hint: 'AI evaluation reports' },
+  users_non_admin: {
+    label: 'Non-admin users',
+    icon: 'users',
+    hint: 'Students & evaluators',
+  },
+  firebase_auth_non_admin: {
+    label: 'Firebase Auth',
+    icon: 'shield',
+    hint: 'Non-admin auth accounts',
+  },
+  gcs_evaluation_bucket: {
+    label: 'Cloud storage objects',
+    icon: 'upload',
+    hint: 'Videos & banners (bucket kept)',
+  },
+}
+
+/**
+ * Loose key for matching a wipeable-collection name against a deleted_counts
+ * key: the two feeds spell the same thing differently ("users (non-admin)" vs
+ * `users_non_admin`), so compare on letters and digits alone.
+ */
+function collectionKey(name) {
+  return String(name || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+function formatCollectionLabel(name) {
+  return (
+    RESET_COUNT_META[name]?.label ||
+    String(name || '')
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (char) => char.toUpperCase())
+  )
+}
+
+function ResetSummary({ result, excluded = [], onDismiss, onDashboard }) {
+  const deletedEntries = useMemo(() => {
+    const counts = result?.deleted_counts || {}
+    return Object.entries(counts)
+      .map(([key, count]) => ({
+        key,
+        count: Number(count) || 0,
+        label: formatCollectionLabel(key),
+        icon: RESET_COUNT_META[key]?.icon || 'trash',
+        hint: RESET_COUNT_META[key]?.hint || key,
+      }))
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+  }, [result])
+
+  const totalDeleted = deletedEntries.reduce((sum, item) => sum + item.count, 0)
+  const preserved = Array.isArray(result?.preserved) ? result.preserved : []
+
+  /**
+   * Exclusions the server wiped anyway.
+   *
+   * Per-collection selection is only a request: a backend that does not
+   * support it ignores the field and clears everything. The receipt is the
+   * only proof, so it is checked here rather than reporting a success that
+   * quietly deleted data the admin had deselected.
+   */
+  const ignoredExclusions = useMemo(() => {
+    if (!excluded.length) return []
+    const wiped = new Set(
+      deletedEntries.filter((item) => item.count > 0).map((item) => collectionKey(item.key)),
+    )
+    return excluded.filter((name) => wiped.has(collectionKey(name)))
+  }, [excluded, deletedEntries])
+
+  return (
+    <div className={`${PANEL} overflow-hidden border-volt-edge bg-surface`}>
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-volt-edge bg-volt-tint px-5 py-4">
+        <div className="flex items-start gap-3">
+          <span className="grid size-10 shrink-0 place-items-center rounded-drop border border-volt-edge bg-volt text-on-volt">
+            <Icon name="check" size={18} />
+          </span>
+          <div>
+            <h3 className="text-[16px] font-semibold tracking-[-0.02em] text-ink">
+              Database reset complete
+            </h3>
+            <p className="mt-1 max-w-2xl text-[13.5px] text-muted">
+              {result?.message ||
+                'Wipeable application data was cleared. The Super Admin account and the Profile Password were preserved.'}
+            </p>
+          </div>
+        </div>
+        <div className="rounded-drop border border-volt-edge bg-surface px-3 py-2 text-right">
+          <div className={`${MONO} text-[22px] font-semibold text-volt-ink`}>{totalDeleted}</div>
+          <div className="text-[11px] uppercase tracking-[0.08em] text-muted">Items removed</div>
+        </div>
+      </div>
+
+      <div className="stack-md p-5">
+        {ignoredExclusions.length > 0 && (
+          <Alert variant="danger" title="Deselected collections were deleted anyway">
+            The server does not support per-collection resets, so it cleared everything. These
+            were deselected but still wiped:{' '}
+            <span className={MONO}>{ignoredExclusions.join(', ')}</span>
+          </Alert>
+        )}
+
+        {excluded.length > 0 && ignoredExclusions.length === 0 && (
+          <div>
+            <span className={EYEBROW}>Excluded from this reset</span>
+            <ul className="mt-3 flex flex-wrap gap-2">
+              {excluded.map((name) => (
+                <li
+                  key={name}
+                  className="inline-flex items-center gap-1.5 rounded-drop border border-hairline bg-raised px-2.5 py-1.5 text-[12.5px] text-ink"
+                >
+                  <Icon name="shield" size={13} className="text-volt-ink" />
+                  <code className={MONO}>{name}</code>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div>
+          <span className={EYEBROW}>Removed</span>
+          <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+            {deletedEntries.map((item) => (
+              <div
+                key={item.key}
+                className="flex items-center gap-3 rounded-drop border border-hairline bg-surface px-3.5 py-3"
+              >
+                <span className="grid size-9 shrink-0 place-items-center rounded-drop border border-hairline bg-raised text-muted">
+                  <Icon name={item.icon} size={16} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[13.5px] font-medium text-ink">{item.label}</div>
+                  <div className="truncate text-[12px] text-muted">{item.hint}</div>
+                </div>
+                <strong className={`${MONO} text-[18px] text-ink`}>{item.count}</strong>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {preserved.length > 0 && (
+          <div>
+            <span className={EYEBROW}>Preserved</span>
+            <ul className="mt-3 flex flex-wrap gap-2">
+              {preserved.map((item) => (
+                <li
+                  key={item}
+                  className="inline-flex items-center gap-1.5 rounded-drop border border-hairline bg-raised px-2.5 py-1.5 text-[12.5px] text-ink"
+                >
+                  <Icon name="shield" size={13} className="text-volt-ink" />
+                  <code className={MONO}>{item}</code>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-2 pt-1">
+          <Button
+            size="sm"
+            variant="accent"
+            onClick={onDashboard}
+            rightIcon={<Icon name="arrowRight" size={15} />}
+          >
+            Go to dashboard
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onDismiss}>
+            Dismiss summary
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default function ApplicationSettingsPage() {
+  const toAdminPath = useAdminPath()
+  const navigate = useNavigate()
+  const [settings, setSettings] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
+
+  const [profileForm, setProfileForm] = useState(PROFILE_FORM)
+  const [profileLoading, setProfileLoading] = useState(false)
+  const [profileSuccess, setProfileSuccess] = useState('')
+  const [profileError, setProfileError] = useState('')
+
+  const [resetForm, setResetForm] = useState(RESET_FORM)
+  const [resetLoading, setResetLoading] = useState(false)
+  const [resetError, setResetError] = useState('')
+  const [resetResult, setResetResult] = useState(null)
+  // What the admin deselected, and what was deselected on the run the summary
+  // below is reporting — the two differ once the form is cleared.
+  const [excludedCollections, setExcludedCollections] = useState(() => new Set())
+  const [resultExcluded, setResultExcluded] = useState([])
+  const [confirmResetOpen, setConfirmResetOpen] = useState(false)
+
+  const loadSettings = async () => {
+    setLoading(true)
+    setLoadError('')
+    try {
+      const data = await adminApi.getSettings()
+      setSettings(data)
+    } catch (error) {
+      setLoadError(error.message || 'Unable to load application settings.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadSettings()
+  }, [])
+
+  useEffect(() => {
+    if (!profileSuccess) return undefined
+    const timer = setTimeout(() => setProfileSuccess(''), 4000)
+    return () => clearTimeout(timer)
+  }, [profileSuccess])
+
+  const confirmPhrase = settings?.reset_confirm_phrase || 'RESET'
+  const profilePasswordsMatch =
+    profileForm.new_profile_password.length >= 6 &&
+    profileForm.confirm_new_profile_password.length >= 6 &&
+    profileForm.new_profile_password === profileForm.confirm_new_profile_password
+  const canSubmitProfile =
+    profileForm.current_profile_password.length > 0 && profilePasswordsMatch
+  const profileConfirmError =
+    profileForm.confirm_new_profile_password &&
+    profileForm.new_profile_password !== profileForm.confirm_new_profile_password
+      ? 'New profile password and confirm do not match'
+      : ''
+
+  // The list the server reports as wipeable is the whole universe here: an
+  // admin can drop any of them from this run, but nothing outside it is ever
+  // touched.
+  const wipeableCollections = useMemo(
+    () => settings?.wipeable_collections || [],
+    [settings],
+  )
+  const selectedCollections = useMemo(
+    () => wipeableCollections.filter((name) => !excludedCollections.has(name)),
+    [wipeableCollections, excludedCollections],
+  )
+  const excludedNames = useMemo(
+    () => wipeableCollections.filter((name) => excludedCollections.has(name)),
+    [wipeableCollections, excludedCollections],
+  )
+
+  const phraseMatches = resetForm.confirm_phrase === confirmPhrase
+  const canOpenResetModal =
+    resetForm.profile_password.length > 0 &&
+    phraseMatches &&
+    selectedCollections.length > 0 &&
+    !resetLoading
+
+  const toggleCollection = (name) => {
+    setResetError('')
+    setExcludedCollections((current) => {
+      const next = new Set(current)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      return next
+    })
+  }
+
+  const updateProfile = (key) => (event) => {
+    setProfileForm((current) => ({ ...current, [key]: event.target.value }))
+    setProfileError('')
+    setProfileSuccess('')
+  }
+
+  const updateReset = (key) => (event) => {
+    setResetForm((current) => ({ ...current, [key]: event.target.value }))
+    setResetError('')
+  }
+
+  const submitProfilePassword = async (event) => {
+    event.preventDefault()
+    if (!canSubmitProfile || profileLoading) return
+    setProfileLoading(true)
+    setProfileError('')
+    setProfileSuccess('')
+    try {
+      const response = await adminApi.changeProfilePassword(profileForm)
+      setProfileSuccess(response?.message || 'Profile password changed successfully')
+      setProfileForm(PROFILE_FORM)
+      await loadSettings()
+    } catch (error) {
+      setProfileError(error.message || 'Unable to change the profile password.')
+    } finally {
+      setProfileLoading(false)
+    }
+  }
+
+  const submitReset = async () => {
+    setResetLoading(true)
+    setResetError('')
+    const excludedForRun = excludedNames
+    try {
+      const payload = {
+        profile_password: resetForm.profile_password,
+        confirm_phrase: resetForm.confirm_phrase,
+      }
+      // Only sent when something is actually deselected, so a full reset keeps
+      // hitting the endpoint with exactly the payload it has always had.
+      if (excludedForRun.length) payload.collections = selectedCollections
+      const result = await adminApi.resetDatabase(payload)
+      setResultExcluded(excludedForRun)
+      setResetResult(result)
+      setResetForm(RESET_FORM)
+      setConfirmResetOpen(false)
+    } catch (error) {
+      setResetError(error.message || 'Unable to reset the database.')
+      setConfirmResetOpen(false)
+    } finally {
+      setResetLoading(false)
+    }
+  }
+
+  if (loading && !settings) {
+    return (
+      <div className={`${WRAP_APP} py-7 md:py-10`}>
+        <LoadingBlock label="Loading application settings…" />
+      </div>
+    )
+  }
+
+  return (
+    <div className={`${WRAP_APP} py-7 md:py-10`}>
+      <header className="mb-7 sm:mb-9">
+        <span className={EYEBROW}>Super Admin</span>
+        <h1 className="mt-2 text-[28px] font-semibold tracking-[-0.03em] text-ink md:text-[36px]">
+          Application Settings
+        </h1>
+        <p className="mt-2 max-w-3xl text-[15px] text-muted md:text-base">
+          Manage the Profile Password used for destructive actions and reset wipeable data.
+        </p>
+      </header>
+
+      {loadError && (
+        <div className="mb-6">
+          <Alert variant="danger" title="Unable to load settings">
+            {loadError}
+            <div className="alert-action">
+              <Button size="sm" variant="ghost" onClick={loadSettings}>
+                Try again
+              </Button>
+            </div>
+          </Alert>
+        </div>
+      )}
+
+      {settings?.default_profile_password_hint && (
+        <div className="mb-6">
+          <Alert variant="warning" title="Change the default Profile Password.">
+            The Profile Password is still set to the default hint (
+            <code className={MONO}>{settings.default_profile_password_hint}</code>
+            ). Update it before using destructive actions in production.
+          </Alert>
+        </div>
+      )}
+
+      {profileSuccess && (
+        <div className="mb-6">
+          <Alert variant="success">{profileSuccess}</Alert>
+        </div>
+      )}
+
+      {resetResult && (
+        <div className="mb-6">
+          <ResetSummary
+            result={resetResult}
+            excluded={resultExcluded}
+            onDismiss={() => setResetResult(null)}
+            onDashboard={() => navigate(toAdminPath('/admin'))}
+          />
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-2 xl:gap-6">
+        {/* Left column: Profile Password, then Application config under it. */}
+        <div className="flex min-w-0 flex-col gap-5 xl:gap-6">
+          <Card className="min-w-0">
+            <CardHeader>
+              <div>
+                <h3>Profile Password</h3>
+                <p className="text-sm text-muted">
+                  Used to authorize destructive actions such as Reset Database — not for signing in.
+                </p>
+              </div>
+              <Icon name="shield" size={20} className="text-muted" />
+            </CardHeader>
+            <CardBody>
+              <form className="stack-md" onSubmit={submitProfilePassword} noValidate>
+                {profileError && <Alert variant="danger">{profileError}</Alert>}
+
+                <PasswordInput
+                  label="Current profile password"
+                  autoComplete="off"
+                  required
+                  value={profileForm.current_profile_password}
+                  onChange={updateProfile('current_profile_password')}
+                  disabled={profileLoading}
+                />
+                <PasswordInput
+                  label="New profile password"
+                  autoComplete="new-password"
+                  minLength={6}
+                  required
+                  value={profileForm.new_profile_password}
+                  onChange={updateProfile('new_profile_password')}
+                  hint="At least 6 characters"
+                  disabled={profileLoading}
+                />
+                <PasswordInput
+                  label="Confirm new profile password"
+                  autoComplete="new-password"
+                  minLength={6}
+                  required
+                  value={profileForm.confirm_new_profile_password}
+                  onChange={updateProfile('confirm_new_profile_password')}
+                  error={profileConfirmError}
+                  disabled={profileLoading}
+                />
+
+                <Button
+                  type="submit"
+                  variant="accent"
+                  block
+                  loading={profileLoading}
+                  disabled={!canSubmitProfile}
+                >
+                  Change Profile Password
+                </Button>
+
+                <p className="text-sm text-muted">
+                  Your login password is unchanged here. Use{' '}
+                  <Link to="/settings/change-password" className="underline underline-offset-4">
+                    Change Password
+                  </Link>{' '}
+                  to update the password you sign in with.
+                </p>
+              </form>
+            </CardBody>
+          </Card>
+
+          <ApplicationConfigPanel />
+        </div>
+
+        <section className={`${PANEL} min-w-0 overflow-hidden border-missing/30`}>
+          <div className="flex items-start gap-3 border-b border-missing/20 bg-danger-soft px-4 py-4 sm:px-5">
+            <span className="grid size-10 shrink-0 place-items-center rounded-drop border border-missing/30 bg-surface text-missing">
+              <Icon name="alert" size={18} />
+            </span>
+            <div>
+              <h3 className="text-[16px] font-semibold tracking-[-0.02em] text-ink">
+                Reset Database
+              </h3>
+              <p className="mt-1 text-[13.5px] text-muted">
+                Permanently deletes wipeable collections. Only the Super Admin account and the
+                Profile Password are preserved.
+              </p>
+            </div>
+          </div>
+
+          <div className="stack-md p-5">
+            {resetError && <Alert variant="danger">{resetError}</Alert>}
+
+            <div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className={EYEBROW}>What gets wiped</span>
+                <div className="flex items-center gap-2">
+                  <span className={`${MONO} text-[12px] text-muted`}>
+                    {selectedCollections.length}/{wipeableCollections.length} selected
+                  </span>
+                  {excludedNames.length > 0 && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setExcludedCollections(new Set())}
+                      disabled={resetLoading}
+                    >
+                      Select all
+                    </Button>
+                  )}
+                </div>
+              </div>
+              {/* Every wipeable collection the server reports, each one droppable
+                  from this run: × excludes it, + puts it back. Pills wrap to
+                  content — a fixed grid left long collection names truncated
+                  beside mostly-empty cells. */}
+              <ul className="mt-3 flex flex-wrap gap-2">
+                {wipeableCollections.map((name) => {
+                  const excluded = excludedCollections.has(name)
+                  return (
+                    <li
+                      key={name}
+                      className={`inline-flex max-w-full items-center gap-1.5 rounded-full border py-1.5 pr-1.5 pl-2.5 text-[12px] ${
+                        excluded
+                          ? 'border-hairline bg-raised text-muted'
+                          : 'border-missing/25 bg-danger-soft text-missing'
+                      }`}
+                    >
+                      <Icon
+                        name={excluded ? 'shield' : 'trash'}
+                        size={12}
+                        className="shrink-0 opacity-70"
+                      />
+                      <span className={`${MONO} truncate ${excluded ? 'line-through' : ''}`}>
+                        {name}
+                      </span>
+                      <button
+                        type="button"
+                        className="grid size-5 shrink-0 place-items-center rounded-full transition-colors hover:bg-surface disabled:opacity-50"
+                        onClick={() => toggleCollection(name)}
+                        disabled={resetLoading}
+                        title={excluded ? 'Include in the reset' : 'Keep this collection'}
+                        aria-label={
+                          excluded ? `Include ${name} in the reset` : `Keep ${name}, do not delete it`
+                        }
+                      >
+                        <Icon name={excluded ? 'plus' : 'x'} size={12} />
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+
+            {selectedCollections.length === 0 ? (
+              <Alert variant="warning" title="Nothing selected">
+                Every collection is deselected, so this reset would delete nothing. Include at
+                least one to continue.
+              </Alert>
+            ) : excludedNames.length > 0 ? (
+              <Alert variant="warning" title={`${excludedNames.length} kept, ${selectedCollections.length} to delete`}>
+                Deselected collections are left untouched:{' '}
+                <span className={MONO}>{excludedNames.join(', ')}</span>. The Super Admin account
+                and the Profile Password are kept either way.
+              </Alert>
+            ) : (
+              <Alert variant="warning">
+                The Super Admin account and the Profile Password are kept. Everything listed
+                above will be removed. Admin logins are removed.
+              </Alert>
+            )}
+
+            <PasswordInput
+              label="Profile Password"
+              autoComplete="off"
+              required
+              value={resetForm.profile_password}
+              onChange={updateReset('profile_password')}
+              disabled={resetLoading}
+            />
+            <Input
+              label={`Type ${confirmPhrase} to confirm`}
+              value={resetForm.confirm_phrase}
+              onChange={updateReset('confirm_phrase')}
+              placeholder={confirmPhrase}
+              disabled={resetLoading}
+              hint={`Must match exactly: ${confirmPhrase}`}
+              error={
+                resetForm.confirm_phrase && !phraseMatches
+                  ? `Enter ${confirmPhrase} exactly`
+                  : ''
+              }
+            />
+
+            <Button
+              type="button"
+              variant="danger"
+              block
+              disabled={!canOpenResetModal}
+              loading={resetLoading}
+              onClick={() => setConfirmResetOpen(true)}
+              leftIcon={<Icon name="trash" size={17} />}
+            >
+              Reset Database
+            </Button>
+          </div>
+        </section>
+      </div>
+
+      {/* Full width, under the two-column grid: one hackathon at a time. */}
+      <div className="mt-5 xl:mt-6">
+        <DeleteHackathonPanel />
+      </div>
+
+      <Modal
+        open={confirmResetOpen}
+        onClose={() => !resetLoading && setConfirmResetOpen(false)}
+        title="Reset database?"
+        footer={
+          <>
+            <Button
+              variant="ghost"
+              disabled={resetLoading}
+              onClick={() => setConfirmResetOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button variant="danger" loading={resetLoading} onClick={submitReset}>
+              Yes, reset database
+            </Button>
+          </>
+        }
+      >
+        <div className="stack-md">
+          <p>
+            This cannot be undone.{' '}
+            {excludedNames.length
+              ? `${selectedCollections.length} of ${wipeableCollections.length} collections will be permanently deleted.`
+              : 'All wipeable collections will be permanently deleted.'}{' '}
+            The Super Admin account and the Profile Password will be preserved. Admin logins
+            will be removed.
+          </p>
+          {excludedNames.length > 0 && (
+            <p className="text-[13.5px] text-muted">
+              Kept: <span className={MONO}>{excludedNames.join(', ')}</span>
+            </p>
+          )}
+        </div>
+      </Modal>
+    </div>
+  )
+}

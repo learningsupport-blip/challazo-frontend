@@ -1,0 +1,93 @@
+/* =========================================================================
+   Application stylesheet entry.
+
+   The cascade layer order below IS the migration strategy:
+
+     theme      Tailwind design tokens
+     base       Tailwind preflight (element resets)
+     legacy     index.css — the pre-Tailwind design system
+     components repeated multi-utility patterns
+     utilities  Tailwind utilities
+
+   `legacy` sits ABOVE preflight, so the 30+ pages still on index.css keep
+   their typography and element styling untouched. It sits BELOW utilities,
+   so on a migrated page a Tailwind class always wins without !important or
+   specificity games.
+
+   That ordering is what makes this migration incremental: pages move to
+   utilities one at a time, and index.css shrinks as they do. Delete a legacy
+   rule only once nothing references it.
+
+   ---------------------------- Component CSS ------------------------------
+
+   A component's own styles belong in a sibling `<Component>.module.css`,
+   imported by that component (see components/ui/). Three rules keep those
+   files behaving exactly like the index.css rules they replaced:
+
+   1. Wrap everything in `@layer legacy { … }`. Module files are unlayered by
+      default, which would put them ABOVE utilities and let a component
+      default beat a Tailwind class passed via `className`.
+   2. If a global rule (a page class in index.css, or a `.drop` skin in
+      drop-theme.css) reaches into the component as a descendant, give the
+      element a `data-*` hook and re-point that selector at it — hashed class
+      names are invisible to global stylesheets. Attribute and class
+      selectors share the same specificity, so nothing else shifts.
+   3. Write color-mix() fallbacks by hand. index.css is processed by the
+      Tailwind Vite plugin, which generates them; module files are not in
+      that pass.
+
+   Classes used by many unrelated components (.field, .label, .input, .table,
+   .icon-btn, the stack and grid helpers) are shared primitives — they stay
+   global in index.css rather than moving into any one component.
+   ========================================================================= */
+
+@layer theme, base, legacy, components, utilities;
+
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/preflight.css' layer(base);
+@import './styles/tokens.css';
+@import './index.css' layer(legacy);
+@import './styles/drop-theme.css';
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+@theme {
+  /* Semantic palette — values come from tokens.css via data-theme. */
+  --color-canvas: var(--drop-canvas);
+  --color-surface: var(--drop-surface);
+  --color-raised: var(--drop-raised);
+  --color-hairline: var(--drop-hairline);
+  --color-ink: var(--drop-ink);
+  --color-muted: var(--drop-muted);
+
+  --color-volt: var(--drop-volt);
+  --color-volt-deep: var(--drop-volt-deep);
+  --color-volt-tint: var(--drop-volt-tint);
+  --color-volt-edge: var(--drop-volt-edge);
+  --color-on-volt: var(--drop-on-volt);
+  --color-volt-ink: var(--drop-volt-ink);
+
+  --color-passed: var(--drop-passed);
+  --color-warn: var(--drop-warn);
+  --color-missing: var(--drop-missing);
+  --color-info: var(--drop-info);
+
+  /* Tinted fills behind status text — dark washes, light pastels. */
+  --color-success-soft: var(--drop-success-soft);
+  --color-warning-soft: var(--drop-warning-soft);
+  --color-danger-soft: var(--drop-danger-soft);
+  --color-info-soft: var(--drop-info-soft);
+
+  --font-sans: var(--drop-font-sans);
+  --font-label: var(--drop-font-label);
+  --font-mono: var(--drop-font-mono);
+
+  --radius-drop: var(--drop-radius);
+
+  /* Breakpoints are the design's own, not Tailwind's defaults:
+     md  nav switches from hamburger to inline links
+     lg  readiness check splits into two columns
+     xl  hackathon grid reaches three across */
+  --breakpoint-md: 721px;
+  --breakpoint-lg: 861px;
+  --breakpoint-xl: 1025px;
+}

@@ -1,0 +1,23 @@
+# =============================================================================
+# Example environment configuration. Copy to .env.local to override locally.
+# Vite exposes only variables prefixed with VITE_ to the client.
+# =============================================================================
+
+# Base URL of the backend API.
+#   - Development: leave EMPTY to use the same-origin Vite dev proxy.
+#   - Production : set to the deployed API origin (no trailing slash), e.g.
+#     https://ai-hackathon-evaluator-backend-835728304610.asia-south1.run.app
+VITE_API_BASE_URL=
+
+# Where the dev server proxy forwards API requests (development only).
+VITE_API_TARGET=http://localhost:8080
+
+# Firebase Web SDK (Phone Auth). Same project as the backend.
+# Authentication → Project settings → Your apps → Web app.
+VITE_FIREBASE_API_KEY=
+# Must be {project-id}.firebaseapp.com — NOT localhost (breaks Phone Auth / reCAPTCHA).
+VITE_FIREBASE_AUTH_DOMAIN=
+VITE_FIREBASE_PROJECT_ID=
+VITE_FIREBASE_APP_ID=
+# Optional local dev: fictional test numbers (Firebase Console → Phone → testing).
+# VITE_FIREBASE_PHONE_TEST_MODE=true

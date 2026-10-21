@@ -1,0 +1,1833 @@
+/* =========================================================================
+   Drop — global theme.
+
+   Any page or component opts in by wrapping itself in `.drop`. That gives it
+   the dark canvas, the type treatment, and a dark skin over the shared
+   component classes from index.css (.input, .btn, .alert, .card …), so the
+   existing UI primitives work on a Drop surface without being rewritten.
+
+   Everything lives in @layer components: above `legacy` so it beats
+   index.css, below `utilities` so a Tailwind class still wins.
+   ========================================================================= */
+
+@layer components {
+  /* ----------------------------- Surface ------------------------------- */
+  .drop {
+    /* Remap the legacy design-system variables onto the Drop palette. Every
+       rule in index.css resolves these at use time, so any component dropped
+       onto a Drop surface adapts without being skinned individually — this
+       catches the rules we haven't looked at, not just the ones we have.
+       Greyscale + brand/status surfaces are remapped so light indigo washes
+       don't flash on authenticated pages. Primary CTAs still force volt via
+       the .btn skins below — not every brand token becomes lime. */
+    --bg: var(--color-canvas);
+    --surface: var(--color-surface);
+    --surface-2: var(--color-raised);
+    --border: var(--color-hairline);
+    --border-strong: var(--color-hairline);
+    --text: var(--color-ink);
+    --text-muted: var(--color-muted);
+    --text-subtle: var(--color-muted);
+    --heading: var(--color-ink);
+
+    --brand-50: var(--color-raised);
+    --brand-100: var(--color-hairline);
+    --brand-300: color-mix(in srgb, var(--color-hairline) 55%, var(--color-muted));
+    --brand-400: var(--color-muted);
+    --brand-500: color-mix(in srgb, var(--color-ink) 65%, var(--color-muted));
+    --brand-600: var(--color-ink);
+    --brand-700: var(--color-ink);
+
+    --accent-500: var(--color-muted);
+    --accent-600: var(--color-ink);
+
+    --success-50: var(--drop-success-soft);
+    --success-600: var(--color-passed);
+    --warning-50: var(--drop-warning-soft);
+    --warning-600: var(--color-warn);
+    --danger-50: var(--drop-danger-soft);
+    --danger-600: var(--color-missing);
+    --info-50: var(--drop-info-soft);
+    --info-500: var(--color-info);
+
+    /* Shadows come from the active theme (flat in dark, soft in light). */
+    --shadow-sm: var(--drop-shadow-sm);
+    --shadow-md: var(--drop-shadow-md);
+    --shadow-lg: var(--drop-shadow-md);
+    --shadow-brand: none;
+
+    min-height: 100vh;
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.6;
+    color-scheme: inherit;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .drop h1,
+  .drop h2,
+  .drop h3,
+  .drop h4 {
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+  }
+
+  /* index.css (layer: legacy) styles bare `a` indigo for the rest of the app.
+     Default to inherited colour here; any text-* utility still wins. */
+  .drop a {
+    color: inherit;
+  }
+
+  .drop :focus-visible {
+    outline: 2px solid var(--color-volt);
+    outline-offset: 3px;
+  }
+
+  .drop ::selection {
+    background: var(--color-volt);
+    color: var(--color-on-volt);
+  }
+
+  .drop .text-muted,
+  .drop .text-subtle {
+    color: var(--color-muted);
+  }
+
+  /* Paint the document itself so overscroll matches the active Drop theme.
+     Toggled by useDropSurface(). */
+  body.drop-active {
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    color-scheme: inherit;
+  }
+
+  html:has(body.drop-active) {
+    scroll-behavior: smooth;
+    scroll-padding-top: 76px;
+  }
+
+  /* ---------------------- Form controls (dark skin) -------------------- */
+  .drop .label {
+    color: var(--color-ink);
+  }
+
+  .drop .input,
+  .drop .textarea,
+  .drop .select {
+    background: var(--color-surface);
+    border-color: var(--color-hairline);
+    color: var(--color-ink);
+    border-radius: var(--radius-drop);
+  }
+
+  .drop .input::placeholder,
+  .drop .textarea::placeholder {
+    color: color-mix(in srgb, var(--color-muted) 75%, transparent);
+  }
+
+  .drop .input:focus,
+  .drop .textarea:focus,
+  .drop .select:focus {
+    border-color: var(--color-volt-edge);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-volt) 24%, transparent);
+  }
+
+  .drop .input--error,
+  .drop .textarea--error,
+  .drop .select--error {
+    border-color: var(--color-missing);
+  }
+
+  .drop .input--error:focus,
+  .drop .textarea--error:focus {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-missing) 18%, transparent);
+  }
+
+  .drop .field__error {
+    color: var(--color-missing);
+  }
+
+  .drop .field__hint {
+    color: var(--color-muted);
+  }
+
+  .drop .input-group__addon {
+    color: var(--color-muted);
+  }
+
+  .drop .input-group__addon:hover {
+    color: var(--color-ink);
+  }
+
+
+  /* ------------------------- Rich text editor -------------------------- */
+  /* The shell tracks .input/.textarea above; only the accents need the Drop
+     palette, since index.css hardcodes an indigo focus ring and active state. */
+  .drop .rich-text .rt-shell {
+    border-color: var(--color-hairline);
+    background: var(--color-surface);
+    border-radius: var(--radius-drop);
+  }
+
+  .drop .rich-text .rt-shell:focus-within {
+    border-color: var(--color-volt-edge);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-volt) 24%, transparent);
+  }
+
+  .drop .rich-text .rt-shell--error {
+    border-color: var(--color-missing);
+  }
+
+  .drop .rich-text .rt-shell--error:focus-within {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-missing) 18%, transparent);
+  }
+
+  .drop .rt-toolbar {
+    background: var(--color-raised);
+    border-bottom-color: var(--color-hairline);
+  }
+
+  .drop .rt-tool.is-active {
+    background: var(--color-volt-tint);
+    border-color: var(--color-volt-edge);
+    color: var(--color-volt-ink);
+  }
+
+  .drop .rt-select,
+  .drop .rt-color__menu {
+    background: var(--color-surface);
+    border-color: var(--color-hairline);
+    color: var(--color-ink);
+  }
+
+  .drop .rt-color__menu {
+    box-shadow: 0 12px 32px rgb(0 0 0 / 0.35);
+  }
+
+  .drop .rt-swatch {
+    border-color: color-mix(in srgb, var(--color-hairline) 70%, transparent);
+  }
+
+  /* ------------------------------ Buttons ------------------------------ */
+  .drop [data-btn] {
+    border-radius: var(--radius-drop);
+  }
+
+  .drop [data-btn-variant='accent'],
+  .drop [data-btn-variant='primary'] {
+    background: var(--color-volt);
+    color: var(--color-on-volt);
+    box-shadow: none;
+  }
+
+  .drop [data-btn-variant='accent']:hover:not(:disabled),
+  .drop [data-btn-variant='primary']:hover:not(:disabled) {
+    background: var(--color-volt-deep);
+    filter: none;
+  }
+
+  .drop [data-btn-variant='secondary'] {
+    background: transparent;
+    border-color: var(--color-hairline);
+    color: var(--color-ink);
+  }
+
+  .drop [data-btn-variant='secondary']:hover:not(:disabled) {
+    background: var(--color-raised);
+    border-color: color-mix(in srgb, var(--color-muted) 50%, transparent);
+  }
+
+  .drop [data-btn-variant='ghost'] {
+    color: var(--color-muted);
+  }
+
+  .drop [data-btn-variant='ghost']:hover:not(:disabled) {
+    background: var(--color-surface);
+    color: var(--color-ink);
+  }
+
+  /* ------------------------------ Surfaces ----------------------------- */
+  .drop [data-card] {
+    background: var(--color-surface);
+    border-color: var(--color-hairline);
+    border-radius: var(--radius-drop);
+    box-shadow: none;
+  }
+
+  /* ------------------------------- Alerts ------------------------------ */
+  .drop [data-alert] {
+    border-radius: var(--radius-drop);
+  }
+
+  .drop [data-alert-variant='danger'] {
+    background: var(--drop-danger-soft);
+    border-color: color-mix(in srgb, var(--color-missing) 38%, transparent);
+    color: var(--color-missing);
+  }
+
+  .drop [data-alert-variant='success'] {
+    background: var(--drop-success-soft);
+    border-color: color-mix(in srgb, var(--color-passed) 38%, transparent);
+    color: var(--color-passed);
+  }
+
+  .drop [data-alert-variant='warning'] {
+    background: var(--drop-warning-soft);
+    border-color: color-mix(in srgb, var(--color-warn) 38%, transparent);
+    color: var(--color-warn);
+  }
+
+  .drop [data-alert-variant='info'] {
+    background: var(--drop-info-soft);
+    border-color: color-mix(in srgb, var(--color-info) 38%, transparent);
+    color: var(--color-info);
+  }
+
+  /* Auth heading sits between the page h1 and a section h2. */
+  .drop-auth-card h1 {
+    font-size: 26px;
+    letter-spacing: -0.025em;
+  }
+
+  /* ------------------- Register role picker (dark skin) ---------------- */
+  .drop .register-role-panel {
+    border-color: var(--color-hairline);
+    border-radius: var(--radius-drop);
+    background: var(--color-surface);
+    box-shadow: none;
+  }
+
+  .drop .register-role-panel.is-open {
+    border-color: var(--color-volt-edge);
+    box-shadow: none;
+  }
+
+  .drop .register-role-trigger {
+    background: var(--color-surface);
+    color: var(--color-ink);
+  }
+
+  .drop .register-role-trigger:hover {
+    background: var(--color-raised);
+  }
+
+  .drop .register-role-trigger__icon {
+    color: var(--color-volt-ink);
+    background: var(--color-volt-tint);
+  }
+
+  .drop .register-role-trigger__copy strong {
+    color: var(--color-ink);
+  }
+
+  .drop .register-role-trigger__chevron {
+    color: var(--color-muted);
+  }
+
+  .drop .register-role-panel__body {
+    border-top-color: var(--color-hairline);
+  }
+
+  .drop .register-back-link {
+    color: var(--color-muted);
+  }
+
+  .drop .register-back-link:hover {
+    color: var(--color-ink);
+  }
+
+  /* ---------------- Multi-step register stepper (dark skin) ------------ */
+  .drop .student-register-steps__item,
+  .drop .hackathon-form-stepper__item,
+  .drop .submission-stepper__item {
+    color: var(--color-muted);
+  }
+
+  .drop .student-register-steps__mark {
+    border-color: var(--color-hairline);
+    background: var(--color-raised);
+    color: var(--color-muted);
+  }
+
+  .drop .student-register-steps__connector {
+    background: var(--color-hairline);
+  }
+
+  /* Active step takes the volt accent; completed steps use the passed state,
+     which is legitimate status colour rather than decoration. */
+  .drop .student-register-steps__item.is-active {
+    color: var(--color-volt-ink);
+  }
+
+  .drop .student-register-steps__item.is-active .student-register-steps__mark {
+    border-color: var(--color-volt-edge);
+    background: var(--color-volt-tint);
+    color: var(--color-volt-ink);
+  }
+
+  .drop .student-register-steps__item.is-done {
+    color: var(--color-passed);
+  }
+
+  .drop .student-register-steps__item.is-done .student-register-steps__mark {
+    border-color: var(--color-passed);
+    background: var(--color-passed);
+    color: var(--color-canvas);
+  }
+
+  .drop .student-register-steps__item.is-done .student-register-steps__connector {
+    background: var(--color-passed);
+  }
+
+  .drop .student-register-panel {
+    background: transparent;
+    border-color: var(--color-hairline);
+  }
+
+  /* Step indicators used by the multi-step register forms. */
+  .drop .form-section-title {
+    border-bottom-color: var(--color-hairline);
+    color: var(--color-ink);
+  }
+
+  .drop .auth-tabs {
+    background: var(--color-surface);
+  }
+
+  .drop .auth-tab {
+    color: var(--color-muted);
+  }
+
+  .drop .auth-tab.active {
+    background: var(--color-raised);
+    color: var(--color-ink);
+    box-shadow: none;
+  }
+
+  /* ------------------------- App shell / sidebar ----------------------- */
+  .drop.app-shell,
+  .drop .app-content {
+    background: var(--color-canvas);
+  }
+
+  /* Container widths live in @layer utilities at the end of this file — see the
+     note there. Putting them here let Tailwind's own .container utility win. */
+
+  .drop .admin-submissions-page,
+  .drop .admin-submission-detail {
+    max-width: none;
+  }
+
+  .drop .admin-submission-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+    gap: 20px;
+    align-items: start;
+  }
+
+  @media (min-width: 1100px) {
+    .drop .admin-submission-layout {
+      grid-template-columns: minmax(0, 1.8fr) minmax(340px, 420px);
+      gap: 24px;
+    }
+  }
+
+  @media (max-width: 900px) {
+    .drop .admin-submission-layout {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .drop [data-accordion] {
+    border-radius: var(--radius-drop);
+    box-shadow: none;
+  }
+
+  .drop [data-accordion][open] {
+    border-color: var(--color-hairline);
+    box-shadow: none;
+  }
+
+  .drop .analysis-score-summary,
+  .drop .analysis-detail-panel {
+    border-color: var(--color-hairline);
+    background: var(--color-raised);
+  }
+
+  .drop .analysis-score-summary__bars span {
+    background: var(--color-volt);
+  }
+
+  .drop .analysis-report-section + .analysis-report-section {
+    border-color: var(--color-hairline);
+  }
+
+  .drop .scorecard-ring__track,
+  .drop .ai-metric-card,
+  .drop .manual-metric-card,
+  .drop .manual-boolean-list label,
+  .drop .manual-choice-row label,
+  .drop .manual-choice-row button {
+    border-color: var(--color-hairline);
+  }
+
+  .drop .scorecard-ring__track {
+    stroke: var(--color-raised);
+  }
+
+  .drop .manual-score-link:hover {
+    color: var(--color-volt-ink);
+  }
+
+  .drop .admin-submission-hackathons {
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+    gap: 18px;
+  }
+
+  @media (min-width: 721px) {
+    .drop .admin-submission-hackathons {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (min-width: 1100px) {
+    .drop .admin-submission-hackathons {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  .drop .admin-submission-hackathon-card {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: var(--radius-drop);
+    transition: transform 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+  }
+
+  .drop .admin-submission-hackathon-card:hover {
+    transform: translateY(-3px);
+    border-color: var(--color-volt-edge);
+    background: var(--color-raised);
+    box-shadow: none;
+  }
+
+  .drop .admin-submission-hackathon-card__media {
+    height: 200px;
+    background: linear-gradient(135deg, var(--color-surface), var(--color-raised));
+  }
+
+  .drop .admin-submission-hackathon-card__media > div {
+    color: var(--color-muted);
+    background: linear-gradient(135deg, var(--color-surface), var(--color-raised));
+  }
+
+  .drop .admin-submission-hackathon-card__media::after {
+    background: linear-gradient(transparent 40%, rgb(10 10 11 / 0.78));
+  }
+
+  .drop .admin-submission-hackathon-card__media > span {
+    color: var(--color-ink);
+    border-color: var(--color-hairline);
+    background: rgb(19 19 22 / 0.82);
+  }
+
+  .drop .admin-submission-hackathon-card [data-card-body] {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 16px;
+    grid-template-columns: none;
+    padding: 20px;
+  }
+
+  .drop .admin-submission-hackathon-card h2 {
+    font-size: 1.15rem;
+    letter-spacing: -0.02em;
+  }
+
+  .drop .admin-submission-hackathon-card [data-btn] {
+    align-self: stretch;
+    grid-column: auto;
+    grid-row: auto;
+    width: 100%;
+  }
+
+  .drop .admin-submission-hackathon-card__metrics {
+    margin-top: auto;
+  }
+
+  .drop .admin-submission-overview {
+    grid-template-columns: minmax(140px, 180px) minmax(0, 1fr);
+    gap: 14px;
+  }
+
+  .drop .admin-submission-overview__search {
+    width: min(100%, 420px);
+  }
+
+  .drop .hackathon-grid {
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+    gap: 18px;
+  }
+
+  @media (min-width: 721px) {
+    .drop .hackathon-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (min-width: 1100px) {
+    .drop .hackathon-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  .drop .hackathon-card__media {
+    height: 210px;
+  }
+
+  .drop .hackathons-hero {
+    padding: 28px 32px;
+  }
+
+  .drop .themes-grid {
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  @media (min-width: 721px) {
+    .drop .themes-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (min-width: 1100px) {
+    .drop .themes-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  .drop .requirements-grid {
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  @media (min-width: 721px) {
+    .drop .requirements-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (min-width: 1100px) {
+    .drop .requirements-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  .drop .theme-card,
+  .drop .requirement-list-card {
+    border-radius: var(--radius-drop);
+    transition: transform 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+  }
+
+  .drop .theme-card:hover,
+  .drop .requirement-list-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--color-volt-edge);
+    background: var(--color-raised);
+    box-shadow: none;
+  }
+
+  .drop .admin-hackathon-queue-banner {
+    height: 220px;
+    border-radius: var(--radius-drop);
+    overflow: hidden;
+    border: 1px solid var(--color-hairline);
+  }
+
+  .drop .admin-hackathon-queue-banner img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .drop .page-header .eyebrow {
+    color: var(--color-muted);
+  }
+
+  .drop .brand__mark {
+    color: var(--color-on-volt);
+    background: var(--color-volt);
+    border: none;
+    box-shadow: none;
+    border-radius: 50%;
+  }
+
+  .drop .sidebar {
+    color: var(--color-muted);
+    border-right: 1px solid var(--color-hairline);
+    background: var(--color-surface);
+    box-shadow: none;
+  }
+
+  .drop .sidebar__header {
+    border-bottom-color: var(--color-hairline);
+  }
+
+  .drop .sidebar .brand {
+    color: var(--color-ink);
+  }
+
+  .drop .sidebar .brand__name span {
+    color: var(--color-volt-ink);
+  }
+
+  .drop .sidebar__close {
+    color: var(--color-muted);
+  }
+
+  .drop .sidebar__close:hover {
+    color: var(--color-ink);
+    background: var(--color-raised);
+  }
+
+  .drop .sidebar__workspace {
+    border-color: var(--color-hairline);
+    background: var(--color-raised);
+  }
+
+  .drop .sidebar__workspace span {
+    color: var(--color-muted);
+  }
+
+  .drop .sidebar__workspace small {
+    color: var(--color-muted);
+  }
+
+  .drop .sidebar__nav-label {
+    color: color-mix(in srgb, var(--color-muted) 80%, transparent);
+  }
+
+  .drop .sidebar-link {
+    color: var(--color-muted);
+    border-radius: var(--radius-drop);
+  }
+
+  .drop .sidebar-link:hover {
+    color: var(--color-ink);
+    background: var(--color-raised);
+    transform: none;
+  }
+
+  .drop .sidebar-link.is-active,
+  .drop .sidebar-link.is-active:hover {
+    color: var(--color-on-volt);
+    background: var(--color-volt);
+    box-shadow: none;
+  }
+
+  /* The row itself carries the state; the glyph needs no tile behind it. */
+  .drop .sidebar-link__icon {
+    color: inherit;
+    background: transparent;
+    border-radius: 8px;
+  }
+
+  /* Role pill under the sidebar avatar mirrors the active nav fill. */
+  .drop .sidebar-profile [data-badge] {
+    color: var(--color-on-volt);
+    background: var(--color-volt);
+    border-color: transparent;
+  }
+
+  /* A solid volt fill is too loud against white — light tints instead. */
+  html[data-theme='light'] .drop .sidebar-link.is-active,
+  html[data-theme='light'] .drop .sidebar-link.is-active:hover {
+    color: var(--color-ink);
+    background: var(--color-volt-tint);
+  }
+
+  html[data-theme='light'] .drop .sidebar-profile [data-badge] {
+    color: var(--color-ink);
+    background: var(--color-volt-tint);
+    border-color: color-mix(in srgb, var(--color-volt-edge) 45%, transparent);
+  }
+
+  .drop .sidebar-nav-group.is-active > summary {
+    color: var(--color-ink);
+    background: var(--color-raised);
+  }
+
+  .drop .sidebar-nav-group__chevron {
+    color: var(--color-muted);
+  }
+
+  .drop .sidebar-nav-group__items {
+    border-left-color: var(--color-hairline);
+  }
+
+  .drop .sidebar-sub-link {
+    color: var(--color-muted);
+  }
+
+  .drop .sidebar-sub-link > span {
+    background: var(--color-raised);
+  }
+
+  .drop .sidebar-sub-link:hover {
+    color: var(--color-ink);
+    background: var(--color-raised);
+  }
+
+  .drop .sidebar-sub-link.is-active {
+    color: var(--color-ink);
+    background: var(--color-volt-tint);
+  }
+
+  .drop .sidebar-sub-link.is-active > span {
+    color: var(--color-volt-ink);
+  }
+
+  .drop .sidebar__footer {
+    border-top-color: var(--color-hairline);
+    background: transparent;
+  }
+
+  .drop .sidebar-profile:hover,
+  .drop .sidebar-profile-menu[open] .sidebar-profile {
+    background: var(--color-raised);
+  }
+
+  .drop .sidebar-profile strong {
+    color: var(--color-ink);
+  }
+
+  .drop .sidebar-profile__chevron {
+    color: var(--color-muted);
+  }
+
+  .drop .sidebar-profile-menu__popover {
+    border-color: var(--color-hairline);
+    background: var(--color-raised);
+    box-shadow: none;
+  }
+
+  .drop .sidebar-profile-menu__heading {
+    border-bottom-color: var(--color-hairline);
+  }
+
+  .drop .sidebar-profile-menu__heading small {
+    color: var(--color-muted);
+  }
+
+  .drop .sidebar-profile-menu__heading strong {
+    color: var(--color-ink);
+  }
+
+  .drop .sidebar-utility {
+    color: var(--color-muted);
+  }
+
+  .drop .sidebar-utility:hover {
+    color: var(--color-ink);
+    background: var(--color-surface);
+  }
+
+  .drop .sidebar-utility--danger:hover {
+    color: var(--color-missing);
+    background: var(--drop-danger-soft);
+  }
+
+  .drop .mobile-sidebar-bar {
+    border-bottom-color: var(--color-hairline);
+    background: color-mix(in srgb, var(--color-canvas) 92%, transparent);
+    backdrop-filter: blur(12px);
+  }
+
+  .drop .mobile-sidebar-bar .brand {
+    color: var(--color-ink);
+  }
+
+  .drop .mobile-sidebar-toggle {
+    color: var(--color-ink);
+    border-color: var(--color-hairline);
+    background: var(--color-surface);
+  }
+
+  .drop .sidebar-backdrop {
+    background: rgb(0 0 0 / 0.55);
+  }
+
+  .drop .footer {
+    background: transparent;
+    border-top-color: var(--color-hairline);
+    color: var(--color-muted);
+  }
+
+  /* ------------------------ Shared UI primitives ----------------------- */
+  /* Avatar/StatCard/EmptyState classes are CSS modules now — hook them by
+     data attribute so the theme survives the name hashing. Attribute and
+     class selectors carry identical specificity, so nothing else shifts. */
+  .drop [data-avatar] {
+    color: var(--color-volt-ink);
+    background: var(--color-volt-tint);
+    border: 1px solid var(--color-volt-edge);
+  }
+
+  /* Spinner theming lives in components/ui/Spinner.module.css — it reads the
+     same volt tokens directly, so no override is needed here. */
+
+  .drop [data-badge-variant='brand'] {
+    background: var(--color-raised);
+    color: var(--color-ink);
+    border-color: var(--color-hairline);
+  }
+
+  .drop [data-badge-variant='accent'] {
+    background: var(--color-volt-tint);
+    color: var(--color-volt-ink);
+    border-color: var(--color-volt-edge);
+  }
+
+  .drop [data-badge-variant='success'] {
+    background: var(--drop-success-soft);
+    color: var(--color-passed);
+    border-color: color-mix(in srgb, var(--color-passed) 38%, transparent);
+  }
+
+  .drop [data-badge-variant='warning'] {
+    background: var(--drop-warning-soft);
+    color: var(--color-warn);
+    border-color: color-mix(in srgb, var(--color-warn) 38%, transparent);
+  }
+
+  .drop [data-badge-variant='danger'] {
+    background: var(--drop-danger-soft);
+    color: var(--color-missing);
+    border-color: color-mix(in srgb, var(--color-missing) 38%, transparent);
+  }
+
+  .drop [data-badge-variant='info'] {
+    background: var(--drop-info-soft);
+    color: var(--color-info);
+    border-color: color-mix(in srgb, var(--color-info) 38%, transparent);
+  }
+
+  .drop [data-stat-icon],
+  .drop [data-empty-icon],
+  .drop .feature-card__icon,
+  .drop .section-title-with-icon > span,
+  .drop .hackathon-summary-item__icon,
+  .drop .hackathon-form-heading__icon {
+    color: var(--color-volt-ink);
+    background: var(--color-volt-tint);
+    border: 1px solid var(--color-volt-edge);
+  }
+
+  .drop .table-wrap {
+    border-radius: var(--radius-drop);
+    box-shadow: none;
+  }
+
+  .drop .dropzone:hover,
+  .drop .dropzone--active {
+    border-color: var(--color-volt-edge);
+    background: var(--color-volt-tint);
+  }
+
+  .drop .bar__fill,
+  .drop .rec-timebar__fill {
+    background: var(--color-volt);
+  }
+
+  /* Purple light heroes → Drop surfaces */
+  .drop .hackathons-page {
+    --hackathon-ink: var(--color-ink);
+  }
+
+  .drop .hackathons-hero {
+    border-color: var(--color-hairline);
+    border-radius: var(--radius-drop);
+    background: var(--color-surface);
+    box-shadow: none;
+  }
+
+  .drop .hackathons-hero::after {
+    border-color: var(--color-hairline);
+    opacity: 0.35;
+  }
+
+  .drop .hackathons-hero__icon {
+    color: var(--color-volt-ink);
+    background: var(--color-volt-tint);
+    border: 1px solid var(--color-volt-edge);
+    box-shadow: none;
+  }
+
+  .drop .hackathons-hero .eyebrow {
+    color: var(--color-muted);
+  }
+
+  .drop .hackathon-card {
+    border-radius: var(--radius-drop);
+    box-shadow: none;
+  }
+
+  .drop .hackathon-card:hover {
+    transform: translateY(-2px);
+    box-shadow: none;
+    border-color: var(--color-volt-edge);
+  }
+
+  .drop .hackathon-card__banner--empty {
+    background: linear-gradient(135deg, var(--color-surface), var(--color-raised));
+  }
+
+  .drop .hackathon-card__media {
+    background: var(--color-raised);
+  }
+
+  .drop .requirements-hero {
+    color: var(--color-ink);
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-drop);
+    background: var(--color-surface);
+    box-shadow: none;
+  }
+
+  .drop .requirements-hero .eyebrow {
+    color: var(--color-muted);
+  }
+
+  .drop .requirements-hero h1 {
+    color: var(--color-ink);
+  }
+
+  .drop .requirements-hero p {
+    color: var(--color-muted);
+  }
+
+  .drop .hackathon-detail-hero {
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-drop);
+    background: var(--color-surface);
+    box-shadow: none;
+  }
+
+  .drop .hackathon-detail-hero--empty {
+    background: linear-gradient(135deg, var(--color-surface), var(--color-raised));
+  }
+
+  .drop .hackathon-section-card {
+    border-radius: var(--radius-drop);
+    box-shadow: none;
+  }
+
+  .drop .prize-card,
+  .drop .prize-card--1,
+  .drop .prize-card--2,
+  .drop .prize-card--3 {
+    background: var(--color-raised);
+    border-color: var(--color-hairline);
+    color: var(--color-ink);
+  }
+
+  .drop .prize-card svg,
+  .drop .prize-card--1 svg,
+  .drop .prize-card--3 svg {
+    color: var(--color-volt-ink);
+  }
+
+  .drop .prize-card__place {
+    color: color-mix(in srgb, var(--color-ink) 8%, transparent);
+  }
+
+  .drop .prize-card__label {
+    color: var(--color-muted);
+  }
+
+  .drop .prize-card strong {
+    color: var(--color-ink);
+  }
+
+  .drop .hackathon-summary-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  @media (max-width: 720px) {
+    .drop .hackathon-summary-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .drop .markdown-body {
+    color: var(--color-ink);
+  }
+
+  .drop .markdown-body a {
+    color: var(--color-volt-ink);
+  }
+
+  .drop .markdown-body blockquote {
+    border-left-color: var(--color-volt-edge);
+    background: var(--color-raised);
+    color: var(--color-muted);
+  }
+
+  .drop .hackathon-form-card {
+    border-radius: var(--radius-drop);
+    box-shadow: none;
+    background: var(--color-surface);
+    border-color: var(--color-hairline);
+  }
+
+  .drop .hackathon-form-card [data-card-header] {
+    background: var(--color-raised);
+    border-bottom: 1px solid var(--color-hairline);
+  }
+
+  .drop .hackathon-form-heading h3,
+  .drop .hackathon-form-card [data-card-header] h3 {
+    color: var(--color-ink);
+  }
+
+  .drop .hackathon-form-heading p,
+  .drop .hackathon-form-heading__number {
+    color: var(--color-muted);
+  }
+
+  .drop .hackathon-form-stepper {
+    background: var(--color-surface);
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-drop);
+    padding: 12px;
+  }
+
+  .drop .hackathon-form-stepper li:not(:last-child)::after {
+    background: var(--color-hairline);
+  }
+
+  .drop .hackathon-form-stepper button {
+    color: var(--color-muted);
+  }
+
+  .drop .hackathon-form-stepper button > span {
+    background: var(--color-raised);
+    border: 1px solid var(--color-hairline);
+    color: var(--color-muted);
+  }
+
+  .drop .hackathon-form-stepper button strong {
+    color: var(--color-ink);
+  }
+
+  .drop .hackathon-form-stepper li.is-active {
+    background: var(--color-volt-tint);
+    /* The container is padded, so the highlight is a tile floating inside it.
+       Without a radius it renders as a hard-edged rectangle fighting both the
+       card's rounded corners and the step connectors either side of it. */
+    border-radius: calc(var(--radius-drop) - 2px);
+  }
+
+  .drop .hackathon-form-stepper li.is-active button {
+    color: var(--color-volt-ink);
+  }
+
+  .drop .hackathon-form-stepper li.is-active button > span {
+    background: var(--color-volt);
+    border-color: var(--color-volt);
+    color: var(--color-on-volt);
+    box-shadow: none;
+  }
+
+  .drop .hackathon-form-stepper li.is-complete button > span {
+    background: var(--color-passed);
+    border-color: var(--color-passed);
+    color: var(--color-canvas);
+  }
+
+  .drop .hackathon-wizard-status {
+    background: var(--color-surface);
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-drop);
+    color: var(--color-ink);
+    margin-top:15px;
+  }
+
+  .drop .hackathon-wizard-status > span {
+    color: var(--color-volt-ink);
+    background: var(--color-volt-tint);
+    border: 1px solid var(--color-volt-edge);
+  }
+
+  .drop .hackathon-wizard-status small,
+  .drop .hackathon-wizard-status em {
+    color: var(--color-muted);
+  }
+
+  .drop .hackathon-wizard-status strong {
+    color: var(--color-ink);
+  }
+
+  .drop .hackathon-form-actions {
+    background: color-mix(in srgb, var(--color-surface) 94%, transparent);
+    /* Deliberately heavier than the hairline used elsewhere: this bar floats
+       over scrolling form content, so it needs an edge that reads as a docked
+       control rather than another section divider. */
+    border: 1px solid var(--color-ink);
+    border-radius: var(--radius-drop);
+    box-shadow: none;
+    backdrop-filter: blur(12px);
+    width:92%;
+  }
+
+  .drop .hackathon-form-actions p {
+    color: var(--color-muted);
+  }
+
+  .drop .drafts-inbox {
+    border-color: var(--color-hairline);
+    background: var(--color-surface);
+  }
+
+  .drop .drafts-inbox__head h2 {
+    color: var(--color-ink);
+  }
+
+  .drop .drafts-inbox__count {
+    background: var(--color-raised);
+    color: var(--color-ink);
+  }
+
+  .drop .drafts-inbox__head p,
+  .drop .drafts-inbox__main small {
+    color: var(--color-muted);
+  }
+
+  .drop .drafts-inbox__row {
+    border-color: var(--color-hairline);
+    background: var(--color-raised);
+  }
+
+  .drop .drafts-inbox__main strong {
+    color: var(--color-ink);
+  }
+
+  .drop .drafts-inbox__checklist li {
+    border-color: var(--color-hairline);
+    color: var(--color-muted);
+  }
+
+  .drop .drafts-inbox__checklist li.is-done {
+    border-color: var(--color-passed);
+    color: var(--color-passed);
+  }
+
+  .drop .drafts-inbox__actions a {
+    background: var(--color-volt);
+    color: var(--color-on-volt);
+  }
+
+  .drop .drafts-inbox__actions button {
+    border-color: var(--color-hairline);
+    color: var(--color-muted);
+  }
+
+  .drop .student-final-score__rank {
+    background: var(--color-volt-tint);
+    color: var(--color-volt-ink);
+  }
+
+  .drop .leaderboard__row {
+    border-color: var(--color-hairline);
+    background: var(--color-raised);
+  }
+
+  .drop .leaderboard__row.is-you {
+    border-color: var(--color-volt-edge);
+    background: var(--color-volt-tint);
+  }
+
+  .drop .leaderboard__head h3,
+  .drop .leaderboard__who strong,
+  .drop .leaderboard__rank,
+  .drop .leaderboard__score {
+    color: var(--color-ink);
+  }
+
+  .drop .leaderboard__round,
+  .drop .leaderboard__stats,
+  .drop .leaderboard__who small {
+    color: var(--color-muted);
+  }
+
+  .drop .github-ai,
+  .drop .github-ai__result,
+  .drop .github-ai__segment {
+    border-color: var(--color-hairline);
+  }
+
+  .drop .github-ai {
+    background: var(--color-surface);
+  }
+
+  .drop .github-ai__result {
+    background: var(--color-raised);
+  }
+
+  .drop .github-ai__segment {
+    background: var(--color-surface);
+    color: var(--color-ink);
+  }
+
+  .drop .github-ai__title,
+  .drop .github-ai__score strong,
+  .drop .github-ai__rationale {
+    color: var(--color-ink);
+  }
+
+  .drop .github-ai__link {
+    color: var(--color-volt-ink);
+  }
+
+  .drop .github-ai__processing,
+  .drop .github-ai__score span,
+  .drop .github-ai__score small,
+  .drop .github-ai__segment span,
+  .drop .github-ai__context summary {
+    color: var(--color-muted);
+  }
+
+  .drop .draft-review-row {
+    border-color: var(--color-hairline);
+    background: var(--color-raised);
+  }
+
+  .drop .draft-review-row__icon {
+    color: var(--color-passed);
+  }
+
+  .drop .draft-review-row.is-missing .draft-review-row__icon {
+    color: var(--color-missing);
+  }
+
+  .drop .draft-review-row__copy strong {
+    color: var(--color-ink);
+  }
+
+  .drop .draft-review-row button {
+    border-color: var(--color-hairline);
+    color: var(--color-ink);
+  }
+
+  .drop .draft-review-row button:hover {
+    background: var(--color-surface);
+  }
+
+  .drop .scorecard-bottom-dock {
+    padding-inline: 20px;
+  }
+
+  @media (min-width: 768px) {
+    .drop .scorecard-bottom-dock {
+      padding-inline: 32px;
+    }
+  }
+
+  .drop .scorecard-feedback-banner[data-alert] {
+    border-radius: var(--radius-drop);
+    background: color-mix(in srgb, var(--color-surface) 96%, transparent);
+    box-shadow:
+      0 1px 0 color-mix(in srgb, var(--color-ink) 5%, transparent),
+      0 10px 28px color-mix(in srgb, var(--color-ink) 10%, transparent),
+      0 20px 44px color-mix(in srgb, var(--color-ink) 12%, transparent);
+  }
+
+  .drop .scorecard-form-actions {
+    border-color: var(--color-hairline);
+    border-radius: var(--radius-drop);
+    background: color-mix(in srgb, var(--color-surface) 96%, transparent);
+    box-shadow:
+      0 1px 0 color-mix(in srgb, var(--color-ink) 5%, transparent),
+      0 10px 28px color-mix(in srgb, var(--color-ink) 10%, transparent),
+      0 24px 56px color-mix(in srgb, var(--color-ink) 14%, transparent);
+    backdrop-filter: blur(14px);
+  }
+
+  .drop .scorecard-form-actions__hint {
+    color: var(--color-muted);
+  }
+
+  .drop .scorecard-form-actions__hint svg {
+    color: var(--color-muted);
+  }
+
+  .drop .scorecard-form-actions .scorecard-form-actions__delete {
+    color: var(--color-missing);
+  }
+
+  .drop .scorecard-form-actions .scorecard-form-actions__delete:hover {
+    border-color: color-mix(in srgb, var(--color-missing) 30%, transparent);
+    background: var(--drop-danger-soft, color-mix(in srgb, var(--color-missing) 10%, transparent));
+  }
+
+  .drop .timeline-round-editor {
+    background: var(--color-raised);
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-drop);
+  }
+
+  .drop .hackathon-video-toggle {
+    background: var(--color-raised);
+    border-color: var(--color-hairline);
+  }
+
+  .drop .hackathon-video-toggle strong {
+    color: var(--color-ink);
+  }
+
+  .drop .hackathon-video-toggle small {
+    color: var(--color-muted);
+  }
+
+  .drop .selected-file-row {
+    background: var(--drop-success-soft);
+    border-color: color-mix(in srgb, var(--color-passed) 38%, transparent);
+  }
+
+  .drop .selected-file-row > span,
+  .drop .selected-file-row small {
+    color: var(--color-passed);
+  }
+
+  .drop .selected-file-row strong {
+    color: var(--color-ink);
+  }
+
+  .drop .hackathon-theme-option {
+    background: var(--color-raised);
+    border-color: var(--color-hairline);
+    color: var(--color-ink);
+  }
+
+  .drop .hackathon-theme-option.is-selected {
+    border-color: var(--color-volt-edge);
+    background: var(--color-volt-tint);
+  }
+
+  .drop .filter-pill--active {
+    color: var(--color-on-volt);
+    background: var(--color-volt);
+    box-shadow: none;
+  }
+
+  .drop .metric-scoring-lookup {
+    background: var(--color-surface);
+  }
+
+  .drop .metric-scoring-page {
+    max-width: none;
+  }
+
+  .drop .requirements-page,
+  .drop .requirement-form-page {
+    max-width: none;
+  }
+
+  .drop .requirement-field-card {
+    border-radius: var(--radius-drop);
+    box-shadow: none;
+  }
+
+  .drop .requirement-field-card__header {
+    background: var(--color-raised);
+    border-bottom: 1px solid var(--color-hairline);
+  }
+
+  /* Carries [data-btn] to outrank the generic secondary-button skin above,
+     which would otherwise repaint this border on specificity alone. */
+  .drop [data-btn].requirement-add-field {
+    border-style: dashed;
+    border-color: var(--color-hairline);
+    color: var(--color-muted);
+  }
+
+  .drop [data-btn].requirement-add-field:hover:not(:disabled) {
+    border-color: var(--color-volt-edge);
+    background: var(--color-raised);
+    color: var(--color-ink);
+  }
+
+  .drop .requirement-field-card__number,
+  .drop .requirement-section-heading > span {
+    color: var(--color-volt-ink);
+    background: var(--color-volt-tint);
+    border: 1px solid var(--color-volt-edge);
+  }
+
+  .drop .requirement-toggle {
+    background: var(--color-raised);
+    border-color: var(--color-hairline);
+  }
+
+  .drop .requirement-toggle__track {
+    background: var(--color-hairline);
+  }
+
+  .drop .requirement-toggle__track span {
+    background: var(--color-ink);
+  }
+
+  .drop .requirement-toggle input:checked + .requirement-toggle__track {
+    background: var(--color-volt);
+  }
+
+  .drop .requirement-toggle input:checked + .requirement-toggle__track span {
+    background: var(--color-on-volt);
+  }
+
+  .drop .requirement-toggle input:focus-visible + .requirement-toggle__track {
+    outline-color: var(--color-volt-edge);
+  }
+
+  .drop .requirement-form__actions {
+    border-color: var(--color-hairline);
+    background: var(--color-surface);
+    box-shadow: none;
+    border-radius: var(--radius-drop);
+  }
+
+  .drop .requirement-created-card__icon {
+    color: var(--color-on-volt);
+    background: var(--color-volt);
+  }
+
+  .drop .requirements-hero {
+    color: var(--color-ink);
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-drop);
+    background: var(--color-surface);
+    box-shadow: none;
+  }
+
+  .drop .requirements-hero .eyebrow {
+    color: var(--color-muted);
+  }
+
+  .drop .requirements-hero h1 {
+    color: var(--color-ink);
+  }
+
+  .drop .requirements-hero p {
+    color: var(--color-muted);
+  }
+
+  .drop .requirement-list-card__top > span {
+    color: var(--color-volt-ink);
+    background: var(--color-volt-tint);
+    border: 1px solid var(--color-volt-edge);
+  }
+
+  .drop .icon-btn--danger:hover {
+    color: var(--color-missing);
+    background: var(--drop-danger-soft);
+  }
+
+  .drop [data-modal-overlay] {
+    background: rgb(0 0 0 / 0.62);
+  }
+
+  .drop [data-modal] {
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-drop);
+  }
+
+  .drop .theme-card__top > span,
+  .drop .hackathon-card__themes span,
+  .drop .student-hackathon-theme-card__themes span {
+    color: var(--color-volt-ink);
+    border-color: var(--color-volt-edge);
+    background: var(--color-volt-tint);
+  }
+
+  /* -------------------- Student submission wizard ---------------------- */
+  .drop .submission-wizard {
+    max-width: none;
+  }
+
+  .drop .submission-wizard__intro .eyebrow,
+  .drop .submission-wizard__intro .font-mono {
+    color: var(--color-muted);
+  }
+
+  .drop .submission-wizard__intro h1 {
+    color: var(--color-ink);
+  }
+
+  .drop .submission-wizard__intro p {
+    color: var(--color-muted);
+  }
+
+  .drop .submission-wizard__secure {
+    border-color: var(--color-hairline);
+    background: var(--color-surface);
+    color: var(--color-muted);
+    border-radius: var(--radius-drop);
+  }
+
+  .drop .submission-stepper {
+    border-color: var(--color-hairline);
+    background: var(--color-surface);
+    border-radius: var(--radius-drop);
+    box-shadow: none;
+  }
+
+  .drop .submission-stepper li {
+    color: var(--color-muted);
+  }
+
+  .drop .submission-stepper li:not(:last-child)::after {
+    background: var(--color-hairline);
+  }
+
+  .drop .submission-stepper__number {
+    border-color: var(--color-hairline);
+    background: var(--color-raised);
+    color: var(--color-muted);
+  }
+
+  .drop .submission-stepper li.is-active {
+    color: var(--color-volt-ink);
+    background: var(--color-volt-tint);
+  }
+
+  .drop .submission-stepper li.is-active .submission-stepper__number {
+    color: var(--color-on-volt);
+    border-color: transparent;
+    background: var(--color-volt);
+    box-shadow: none;
+  }
+
+  .drop .submission-stepper li.is-done {
+    color: var(--color-passed);
+  }
+
+  .drop .submission-stepper li.is-done .submission-stepper__number {
+    color: var(--color-canvas);
+    border-color: var(--color-passed);
+    background: var(--color-passed);
+  }
+
+  .drop .submission-panel > [data-card] {
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-drop);
+    background: var(--color-surface);
+    box-shadow: none;
+  }
+
+  .drop .submission-panel__header {
+    background: var(--color-raised);
+    border-bottom: 1px solid var(--color-hairline);
+  }
+
+  .drop .submission-panel__header h2 {
+    color: var(--color-ink);
+  }
+
+  .drop .submission-panel__header p {
+    color: var(--color-muted);
+  }
+
+  .drop .submission-panel__eyebrow {
+    color: var(--color-muted);
+  }
+
+  .drop .submission-panel__icon {
+    color: var(--color-volt-ink);
+    border-color: var(--color-volt-edge);
+    background: var(--color-volt-tint);
+  }
+
+  .drop .submission-panel__icon.is-success {
+    color: var(--color-canvas);
+    border-color: var(--color-passed);
+    background: var(--color-passed);
+  }
+
+  .drop .submission-requirement-banner {
+    border-color: var(--color-hairline);
+    background: var(--color-raised);
+  }
+
+  .drop .submission-requirement-banner > span {
+    color: var(--color-volt-ink);
+    border-color: var(--color-volt-edge);
+    background: var(--color-volt-tint);
+    box-shadow: none;
+  }
+
+  .drop .submission-requirement-banner strong {
+    color: var(--color-ink);
+  }
+
+  .drop .submission-requirement-banner p {
+    color: var(--color-muted);
+  }
+
+  .drop .submission-requirement-banner small {
+    color: var(--color-muted);
+    border-color: var(--color-hairline);
+    background: var(--color-surface);
+  }
+
+  .drop .submission-file-field {
+    color: var(--color-ink);
+    border-color: var(--color-hairline);
+    background: var(--color-raised);
+  }
+
+  .drop .demo-source-options > button {
+    border-color: var(--color-hairline);
+    background: var(--color-raised);
+    color: var(--color-ink);
+    box-shadow: none;
+  }
+
+  .drop .demo-source-options > button:hover:not(:disabled) {
+    border-color: var(--color-volt-edge);
+    background: var(--color-surface);
+    box-shadow: none;
+  }
+
+  .drop .demo-source-options > button.is-active {
+    color: var(--color-ink);
+    border-color: var(--color-volt-edge);
+    background: var(--color-volt-tint);
+    box-shadow: none;
+  }
+
+  .drop .demo-source-options > button > span:first-child {
+    color: var(--color-volt-ink);
+    background: var(--color-volt-tint);
+  }
+
+  .drop .demo-source-options > button.is-active > span:first-child {
+    color: var(--color-on-volt);
+    background: var(--color-volt);
+  }
+
+  .drop .demo-source-empty {
+    border-color: var(--color-hairline);
+    background: var(--color-raised);
+  }
+
+  .drop .demo-file-picker {
+    border-color: var(--color-hairline);
+    background: var(--color-raised);
+  }
+
+  .drop .demo-file-picker > span:first-child {
+    color: var(--color-volt-ink);
+    border-color: var(--color-volt-edge);
+    background: var(--color-volt-tint);
+    box-shadow: none;
+  }
+
+  .drop .submission-video-ready {
+    border-color: var(--color-hairline);
+    background: var(--color-raised);
+  }
+
+  .drop .submission-video-ready > span:first-child {
+    color: var(--color-passed);
+    border-color: var(--color-hairline);
+    background: var(--color-surface);
+  }
+
+  .drop .submission-panel__actions {
+    color: var(--color-muted);
+    border-color: var(--color-hairline);
+    background: var(--color-surface);
+    box-shadow: none;
+    border-radius: var(--radius-drop);
+  }
+
+  .drop .student-submit-success {
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-drop);
+    background: var(--color-surface);
+    box-shadow: none;
+  }
+
+  /* Light theme: keep volt CTAs readable (black label on lime). */
+  html[data-theme='light'] .drop [data-btn-variant='accent'],
+  html[data-theme='light'] .drop [data-btn-variant='primary'] {
+    color: var(--color-on-volt);
+  }
+}
+
+/* Unlayered on purpose: this must outrank utilities. */
+@media (prefers-reduced-motion: reduce) {
+  html:has(body.drop-active) {
+    scroll-behavior: auto;
+  }
+
+  .drop *,
+  .drop *::before,
+  .drop *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+
+  /* Keep loading indicators gently moving under reduced motion. The spinner
+     arc is a CSS module class, so hook it by data attribute instead. */
+  .drop [data-spinner-arc] {
+    animation-duration: 1.6s !important;
+    animation-iteration-count: infinite !important;
+  }
+
+  .drop [class*='hover:-translate']:hover {
+    transform: none !important;
+  }
+}
+
+/* Horizontal rails: keep the scrolling, drop the scrollbar. */
+.drop-no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/*
+ * Page container widths.
+ *
+ * These MUST sit in @layer utilities, not @layer components. Tailwind ships its
+ * own `.container` utility, and cascade layers outrank specificity: a rule in
+ * `utilities` beats one in `components` however specific it is. With these in
+ * `components`, Tailwind's `.container { max-width: 40rem }` silently won and
+ * every authenticated page using `.container` rendered as a 640px strip —
+ * regardless of the 1480px intended here.
+ *
+ * Same layer, so specificity decides again, and `.drop .app-content .container`
+ * (0,3,0) beats the bare `.container` utility (0,1,0).
+ */
+@layer utilities {
+  /* Authenticated pages: fill the content column instead of a tight strip. */
+  .drop .app-content .container {
+    max-width: 1480px;
+    padding-inline: 20px;
+  }
+
+  @media (min-width: 768px) {
+    .drop .app-content .container {
+      padding-inline: 32px;
+    }
+  }
+
+  .drop .app-content .container--narrow {
+    max-width: 760px;
+  }
+}

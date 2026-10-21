@@ -1,0 +1,492 @@
+import { api } from './client'
+import { EVALUATION_STATUS } from '../utils/constants'
+import { uploadVideoToStorage } from '../utils/videoUpload'
+
+/**
+ * A 404 on a collection endpoint means "nothing here", not a failure. Anything
+ * else still throws — a 500 is a real server problem and must not be dressed up
+ * as an empty list, or an outage would read as "no data" to an admin.
+ */
+async function emptyOn404(promise) {
+  try {
+    return await promise
+  } catch (err) {
+    if (err?.status === 404) return []
+    throw err
+  }
+}
+
+function normalizeSubmission(submission) {
+  if (!submission) return submission
+  const evaluation = submission.evaluation ?? submission.result ?? null
+  const analysis = submission.analysis ?? evaluation?.analysis ?? null
+  return {
+    ...submission,
+    evaluation,
+    result: evaluation,
+    analysis,
+    field_scores:
+      analysis?.field_scores ??
+      evaluation?.field_scores ??
+      submission.field_scores ??
+      null,
+    criteria: submission.evaluation_criteria ?? submission.criteria ?? null,
+    overall_score: evaluation?.overall_score ?? null,
+    review_status: submission.review_status || 'none',
+    evaluator_score:
+      submission.evaluator_score ??
+      submission.review_score ??
+      submission.final_score ??
+      null,
+    evaluator_notes: submission.evaluator_notes ?? submission.review_notes ?? null,
+    final_score: submission.final_score ?? null,
+    auto_ai_evaluation: Boolean(submission.auto_ai_evaluation),
+    show_ai_evaluation_button: Boolean(submission.show_ai_evaluation_button),
+    // GitHub AI is independent of the video AI fields above: a round can have
+    // either, both, or neither. `github_ai_result` / `github_ai_error` are
+    // staff-only and simply absent for students.
+    github_ai_evaluation: Boolean(submission.github_ai_evaluation),
+    github_ai_status: submission.github_ai_status || 'none',
+    github_ai_result: submission.github_ai_result ?? null,
+    github_ai_error: submission.github_ai_error ?? null,
+    show_github_ai_evaluation_button: Boolean(submission.show_github_ai_evaluation_button),
+    scorecard:
+      submission.scorecard ??
+      analysis?.scorecard ??
+      evaluation?.scorecard ??
+      null,
+  }
+}
+
+/**
+ * The hackathon a submission belongs to. The admin feed has carried this under
+ * more than one key, so resolve them all — a miss silently counted as zero.
+ */
+function submissionHackathonId(submission) {
+  return submission?.hackathon_id || submission?.hackathon?.id || submission?.hackathonId || ''
+}
+
+/**
+ * A submission that has been evaluated.
+ *
+ * Not just `status === 'completed'`: that only tracks the AI pipeline, so a
+ * submission an admin had scored and published still counted as unevaluated.
+ */
+export function isSubmissionEvaluated(submission) {
+  if (submission?.report_published) return true
+  if (submission?.final_score != null) return true
+  if (submission?.evaluator_score != null) return true
+  return submission?.status === EVALUATION_STATUS.COMPLETED
+}
+
+/**
+ * Has the assigned evaluator already submitted their evaluation? Their score
+ * is on the submission, or it has moved into admin review. Reassigning such a
+ * submission is still allowed, but it needs a reason and is logged.
+ */
+export function isEvaluatorSubmitted(submission) {
+  if (submission?.evaluator_score != null) return true
+  return ['pending_review', 'changes_requested', 'approved'].includes(submission?.review_status)
+}
+
+export const evaluationApi = {
+  /** List every submission owned by the authenticated student. */
+  listSubmissions: async (options) => {
+    const submissions = await api.get('/submissions', options)
+    if (!Array.isArray(submissions)) {
+      throw new Error('The submissions API returned an unsupported response format.')
+    }
+    return submissions.map(normalizeSubmission)
+  },
+
+  /** Admin review queue containing every student submission. */
+  listAllSubmissions: async (options) => {
+    const submissions = await emptyOn404(api.get('/submissions/admin/all', options))
+    if (!Array.isArray(submissions)) {
+      throw new Error('The admin submissions API returned an unsupported response format.')
+    }
+    return submissions.map(normalizeSubmission)
+  },
+
+  /**
+   * Admin Submissions landing screen payload.
+   *
+   * Lives here rather than in the page because the login prefetch warms the
+   * same cache key: two producers writing different shapes to one key meant a
+   * prefetched raw array made the page render "No hackathons available".
+   *
+   * The hackathon list is essential; the submissions feed only supplies counts,
+   * so a failure there degrades the numbers instead of the whole screen.
+   */
+  loadSubmissionHackathonsWithCounts: async (options) => {
+    const [hackathonsResult, submissionsResult] = await Promise.allSettled([
+      evaluationApi.listSubmissionHackathons(options),
+      evaluationApi.listAllSubmissions(options),
+    ])
+    if (hackathonsResult.status === 'rejected') throw hackathonsResult.reason
+    const hackathons = hackathonsResult.value
+    const submissions = submissionsResult.status === 'fulfilled' ? submissionsResult.value : []
+
+    const statsByHackathon = submissions.reduce((counts, submission) => {
+      const id = submissionHackathonId(submission)
+      if (!id) return counts
+      const entry = counts.get(id) || { total: 0, evaluated: 0 }
+      entry.total += 1
+      if (isSubmissionEvaluated(submission)) entry.evaluated += 1
+      counts.set(id, entry)
+      return counts
+    }, new Map())
+
+    return {
+      hackathons: hackathons.map((hackathon) => {
+        const stats = statsByHackathon.get(hackathon.hackathon_id) || { total: 0, evaluated: 0 }
+        const total = Number(hackathon.submission_count ?? stats.total) || stats.total
+        return {
+          ...hackathon,
+          submission_count: total,
+          evaluated_count: stats.evaluated,
+          awaiting_count: Math.max(0, total - stats.evaluated),
+        }
+      }),
+      countsUnavailable: submissionsResult.status === 'rejected',
+    }
+  },
+
+  /** Admin Submissions landing screen: hackathons with submission counts. */
+  listSubmissionHackathons: async (options) => {
+    const hackathons = await emptyOn404(api.get('/submissions/admin/hackathons', options))
+    if (!Array.isArray(hackathons)) {
+      throw new Error('The submission hackathons API returned an unsupported response format.')
+    }
+    return hackathons
+  },
+
+  /** Admin queue for one hackathon. */
+  /**
+   * Push every submission in this hackathon into its linked Google Sheet,
+   * creating the sheet on the first sync. One tab per timeline round plus a
+   * summary; text-only submissions are included with blank video columns.
+   *
+   * Returns the sheet's `spreadsheet_url`, which is also readable afterwards
+   * from GET /hackathons/{id} as `export_spreadsheet_url`.
+   */
+  syncHackathonToGoogleSheet: (hackathonId, options) =>
+    api.post(
+      `/submissions/admin/hackathons/${encodeURIComponent(hackathonId)}/export/google-sheet`,
+      undefined,
+      options,
+    ),
+
+  /**
+   * One page of a hackathon's submissions for the admin queue.
+   *
+   * `params` are `page` (1-based), `page_size`, and the optional filters
+   * `round_index`, `status` (AI analysis), `review_status` (none |
+   * pending_review | changes_requested | approved) and `q`. A backend that pages answers with
+   * `{ items, total, page, page_size, round_summary }`; one that does not yet
+   * ignores the params and returns every submission as a plain array. Both come
+   * back tagged so the caller knows whether it still has to page locally.
+   */
+  listHackathonSubmissionsPage: async (hackathonId, params = {}, options) => {
+    const search = new URLSearchParams()
+    Object.entries(params).forEach(([name, value]) => {
+      if (value !== undefined && value !== null && value !== '') search.set(name, String(value))
+    })
+    const query = search.toString()
+    const payload = await emptyOn404(
+      api.get(
+        `/submissions/admin/hackathons/${encodeURIComponent(hackathonId)}${query ? `?${query}` : ''}`,
+        options,
+      ),
+    )
+    if (Array.isArray(payload)) {
+      return { paginated: false, items: payload.map(normalizeSubmission) }
+    }
+    if (!Array.isArray(payload?.items)) {
+      throw new Error('The hackathon submissions API returned an unsupported response format.')
+    }
+    return {
+      paginated: true,
+      items: payload.items.map(normalizeSubmission),
+      total: Number(payload.total) || 0,
+      roundSummary: Array.isArray(payload.round_summary) ? payload.round_summary : [],
+    }
+  },
+
+  /** Evaluator landing screen: hackathons containing assigned submissions. */
+  listEvaluatorHackathons: async (options) => {
+    const hackathons = await api.get('/submissions/evaluator/hackathons', options)
+    if (!Array.isArray(hackathons)) {
+      throw new Error('The evaluator hackathons API returned an unsupported response format.')
+    }
+    return hackathons
+  },
+
+  /** Evaluator queue for one hackathon, restricted by the backend to assigned work. */
+  listEvaluatorHackathonSubmissions: async (hackathonId, options) => {
+    const submissions = await api.get(
+      `/submissions/evaluator/hackathons/${encodeURIComponent(hackathonId)}`,
+      options,
+    )
+    if (!Array.isArray(submissions)) {
+      throw new Error('The evaluator submissions API returned an unsupported response format.')
+    }
+    return submissions.map(normalizeSubmission)
+  },
+
+  /** Video formats and maximum size accepted by the signed-upload flow. */
+  getAcceptedVideoTypes: (options) =>
+    api.get('/submissions/accepted-video-types', options),
+
+  /**
+   * Admin only: assign, reassign or unassign a submission's evaluator.
+   *
+   * `reason` is required when the submission already has an evaluator — a
+   * reassignment or an unassign — and the backend records it in the
+   * submission's `assignment_history` (who, when, from → to, reason). A first
+   * assignment needs none. Reassigning must not re-queue AI analysis that has
+   * already finished.
+   */
+  assignSubmission: async (submissionId, evaluatorId, reason = '', options) => {
+    const body = { evaluator_id: evaluatorId || null }
+    if (String(reason).trim()) body.reason = String(reason).trim()
+    const submission = await api.post(
+      `/submissions/${encodeURIComponent(submissionId)}/assign`,
+      body,
+      options,
+    )
+    return normalizeSubmission(submission)
+  },
+
+  /**
+   * Admin only: delete an unassigned submission — answers, video, AI analysis,
+   * scores and report — and free its round slot so the student or team can
+   * submit again while the round is open. Answers `{ id, withdrawn: true }`.
+   * Once an evaluator is assigned it fails with 409 SUBMISSION_ASSIGNED and
+   * deletes nothing.
+   */
+  withdrawSubmission: (submissionId, options) =>
+    api.post(`/submissions/${encodeURIComponent(submissionId)}/withdraw`, undefined, options),
+
+  /** Admin only: distribute selected submissions among approved evaluators. */
+  assignHackathonSubmissionsEqually: async (
+    hackathonId,
+    submissionIds,
+    evaluatorIds,
+    options,
+  ) => {
+    const body = { submission_ids: submissionIds }
+    if (evaluatorIds?.length) body.evaluator_ids = evaluatorIds
+    const result = await api.post(
+      `/submissions/admin/hackathons/${encodeURIComponent(hackathonId)}/assign-equally`,
+      body,
+      options,
+    )
+    return {
+      ...result,
+      submissions: Array.isArray(result?.submissions)
+        ? result.submissions.map(normalizeSubmission)
+        : [],
+    }
+  },
+
+  /**
+   * Evaluator only: submit scorecard manual metrics (preferred) or legacy final_score.
+   * Pass either a payload object `{ manual_metrics, evaluator_notes }` or
+   * legacy `(score, notes)` arguments.
+   */
+  submitForAdminReview: async (submissionId, scoreOrPayload, notes, options) => {
+    let body
+    let requestOptions = options
+    if (scoreOrPayload && typeof scoreOrPayload === 'object' && !Array.isArray(scoreOrPayload)) {
+      body = {
+        manual_metrics: scoreOrPayload.manual_metrics,
+        evaluator_notes: scoreOrPayload.evaluator_notes ?? null,
+      }
+      if (scoreOrPayload.final_score != null) body.final_score = scoreOrPayload.final_score
+      if (scoreOrPayload.override_ai_scores != null) {
+        body.override_ai_scores = Boolean(scoreOrPayload.override_ai_scores)
+      }
+      if (Array.isArray(scoreOrPayload.ai_overrides) && scoreOrPayload.ai_overrides.length) {
+        body.ai_overrides = scoreOrPayload.ai_overrides
+      }
+      requestOptions = notes && typeof notes === 'object' ? notes : options
+    } else {
+      body = {
+        final_score: scoreOrPayload,
+        evaluator_notes: notes || null,
+      }
+    }
+    const submission = await api.post(
+      `/submissions/${encodeURIComponent(submissionId)}/submit-for-review`,
+      body,
+      requestOptions,
+    )
+    return normalizeSubmission(submission)
+  },
+
+  /** Admin only: approve an evaluator review and publish the final result. */
+  /**
+   * Approving no longer shows the report to the student — publishing does.
+   *
+   * `publishNow` does both in one call, which is what the "Publish now" action
+   * sends while a review is still pending. A hackathon with auto-publish on
+   * releases the report on approval regardless, so the response is the source
+   * of truth for whether it ended up visible.
+   */
+  approveEvaluatorReview: async (submissionId, reviewNotes, publishNow = false, options) => {
+    const submission = await api.post(
+      `/submissions/${encodeURIComponent(submissionId)}/approve-evaluation`,
+      { review_notes: reviewNotes || null, publish_now: publishNow },
+      options,
+    )
+    return normalizeSubmission(submission)
+  },
+
+  /** Admin only: return a submission to its evaluator for changes. */
+  requestEvaluatorChanges: async (submissionId, reviewNotes, options) => {
+    const submission = await api.post(
+      `/submissions/${encodeURIComponent(submissionId)}/request-changes`,
+      { review_notes: reviewNotes || null },
+      options,
+    )
+    return normalizeSubmission(submission)
+  },
+
+  /** Upload a video (optional) via signed URL, then finalize the submission. */
+  createSubmission: async (file, details, options) => {
+    const { onStageChange, onUploadProgress, ...requestOptions } = options || {}
+    const tooLargeMessage = 'Video is too large for direct upload — please retry.'
+
+    const baseBody = {
+      hackathon_id: details.hackathon_id,
+      // 0-based timeline round. Legacy submissions without one are read as 0.
+      round_index: Number(details.round_index) || 0,
+      theme_id: details.theme_id,
+      problem_statement: details.problem_statement,
+      solution_description: details.solution_description,
+      mvp_link: details.mvp_link || null,
+      github_link: details.github_link || null,
+      field_answers: details.field_answers || null,
+      evaluation_requirement_id: details.evaluation_requirement_id || null,
+      video_source: details.video_source || null,
+    }
+
+    try {
+      if (!file) {
+        onStageChange?.('finalizing')
+        const submission = await api.post(
+          '/submissions/from-upload',
+          baseBody,
+          requestOptions,
+        )
+        return normalizeSubmission(submission)
+      }
+
+      const contentType = file.type || 'video/mp4'
+
+      onStageChange?.('preparing')
+      onUploadProgress?.(0)
+      const prep = await api.post(
+        '/submissions/upload-url',
+        {
+          filename: file.name,
+          content_type: contentType,
+          content_length: file.size,
+          video_source: details.video_source,
+        },
+        requestOptions,
+      )
+
+      onStageChange?.('uploading')
+      try {
+        await uploadVideoToStorage(file, prep, {
+          signal: requestOptions.signal,
+          onProgress: onUploadProgress,
+        })
+      } catch (uploadError) {
+        if (uploadError.name === 'AbortError') throw uploadError
+        if (uploadError.status === 413) throw new Error(tooLargeMessage, { cause: uploadError })
+        throw uploadError
+      }
+
+      onStageChange?.('finalizing')
+      const submission = await api.post(
+        '/submissions/from-upload',
+        {
+          ...baseBody,
+          video_path: prep.video_path,
+          content_type: prep.content_type,
+          source_filename: prep.source_filename,
+          video_source: details.video_source,
+        },
+        requestOptions,
+      )
+      return normalizeSubmission(submission)
+    } catch (error) {
+      if (error.status === 413) throw new Error(tooLargeMessage, { cause: error })
+      throw error
+    }
+  },
+
+  /** Start AI evaluation for an existing submission. */
+  /**
+   * Run the GitHub repository analysis for one submission. Admin or the
+   * assigned evaluator only; 202 + the updated submission, which then reports
+   * `github_ai_status: 'processing'` until the analyzer returns.
+   */
+  evaluateGithubWithAi: async (submissionId, options) => {
+    const submission = await api.post(
+      `/submissions/${encodeURIComponent(submissionId)}/evaluate-github-ai`,
+      undefined,
+      options,
+    )
+    return normalizeSubmission(submission)
+  },
+
+  evaluateSubmission: async (submissionId, evaluationCriteria, options) => {
+    const submission = await api.post(
+      `/submissions/${encodeURIComponent(submissionId)}/evaluate`,
+      { evaluation_criteria: evaluationCriteria || null },
+      options,
+    )
+    return normalizeSubmission(submission)
+  },
+
+  /** Admin only: publish or hide a completed report for the student. */
+  publishSubmissionReport: async (submissionId, publish, options) => {
+    const submission = await api.post(
+      `/submissions/${encodeURIComponent(submissionId)}/publish`,
+      { publish },
+      options,
+    )
+    return normalizeSubmission(submission)
+  },
+
+  /** Fetch one submission. Students may fetch their own; evaluators/admins may fetch any. */
+  getSubmission: async (submissionId, options) => {
+    const submission = await api.get(
+      `/submissions/${encodeURIComponent(submissionId)}`,
+      options,
+    )
+    return normalizeSubmission(submission)
+  },
+
+  /**
+   * Roster behind a submission: every member's name, email and user id, with
+   * the leader flagged. Solo rounds return the single student as one member.
+   *
+   * Scoped to the submission rather than the team id because that is what the
+   * admin table already holds — and it inherits the submission's own access
+   * rules rather than inventing a second set.
+   */
+  getSubmissionTeam: (submissionId, options) =>
+    api.get(`/submissions/${encodeURIComponent(submissionId)}/team`, options),
+
+  /** Fetch the completed submission's checklist and Markdown analysis report. */
+  getSubmissionReport: (submissionId, options) =>
+    api.get(
+      `/submissions/${encodeURIComponent(submissionId)}/report`,
+      options,
+    ),
+}

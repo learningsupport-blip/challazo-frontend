@@ -1,0 +1,340 @@
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import Input from '../ui/Input'
+import Button from '../ui/Button'
+import Alert from '../ui/Alert'
+import { LoadingBlock } from '../ui/Spinner'
+import Icon from '../ui/Icon'
+import { MONO } from '../drop/theme'
+import MobileField from './MobileField'
+import OtpRow from './OtpRow'
+import PasswordFields from './PasswordFields'
+import { authApi } from '../../api/auth'
+import { AUTH_ERROR, authErrorCode, authErrorField, authErrorMessage } from '../../api/authErrors'
+import { useRegistrationConfig } from '../../hooks/useRegistrationConfig'
+import { VERIFY, useRegistrationVerification } from '../../hooks/useRegistrationVerification'
+import { RECAPTCHA_CONTAINER_ID } from '../../lib/firebasePhone'
+import { ROLES } from '../../utils/constants'
+import { isEmployeeId, isNxtwaveEmail, validateEvaluatorForm } from '../../utils/validators'
+import { trackEvent } from '../../lib/logrocket'
+
+/** An employee ID is exactly this long, so the field stops accepting more. */
+const EMPLOYEE_ID_LENGTH = 9
+
+/** Shown as the placeholder and the worked example under the field. */
+const EMPLOYEE_ID_SAMPLE = 'NW0003800'
+
+const INITIAL = {
+  first_name: '',
+  last_name: '',
+  employee_id: '',
+  email: '',
+  country_code: '+91',
+  mobile_national: '',
+  password: '',
+  confirm_password: '',
+}
+
+const PENDING_MESSAGE = 'Evaluator registration submitted.'
+
+/**
+ * Evaluator self-registration — the student flow with an employee ID, a
+ * corporate email domain, and an approval gate instead of a redirect to a
+ * dashboard. Email and mobile verify independently against one registration
+ * session, each binding only its own field.
+ */
+/** What the disabled Create button asks for, given which channels are on. */
+function verifyPrompt(emailRequired, phoneRequired) {
+  if (emailRequired && phoneRequired) return 'Verify both email and mobile number to create your account.'
+  if (emailRequired) return 'Verify your email to create your account.'
+  if (phoneRequired) return 'Verify your mobile number to create your account.'
+  return 'Fill every required field and match the password rules.'
+}
+
+/**
+ * Waits for the public registration config, then renders the form with it: a
+ * channel switched off keeps its field but loses its Verify step.
+ */
+export default function EvaluatorRegisterForm({ onSuccess }) {
+  const { ready, emailRequired, phoneRequired } = useRegistrationConfig()
+  if (!ready) return <LoadingBlock label="Loading registration…" />
+  return (
+    <EvaluatorRegisterFormBody onSuccess={onSuccess} emailRequired={emailRequired} phoneRequired={phoneRequired} />
+  )
+}
+
+function EvaluatorRegisterFormBody({ onSuccess, emailRequired, phoneRequired }) {
+  const navigate = useNavigate()
+  const [form, setForm] = useState(INITIAL)
+  const [errors, setErrors] = useState({})
+  const [submitError, setSubmitError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [result, setResult] = useState(null)
+
+  const verification = useRegistrationVerification({
+    emailRequired,
+    phoneRequired,
+    role: ROLES.EVALUATOR,
+    email: form.email,
+    countryCode: form.country_code,
+    mobileNational: form.mobile_national,
+    onFieldError: (field, message) => setErrors((prev) => ({ ...prev, [field]: message })),
+    isEmailValid: isNxtwaveEmail,
+    invalidEmailMessage: 'Use your @nxtwave.co.in email address',
+  })
+
+  const fieldErrors = validateEvaluatorForm(form)
+  const canSubmit = verification.bothVerified && Object.keys(fieldErrors).length === 0
+
+  const employeeId = form.employee_id.trim()
+  const employeeIdValid = isEmployeeId(employeeId)
+
+  /**
+   * Employee IDs are written in upper case, and the backend matches them
+   * exactly when checking one is not already registered — so fold the case
+   * here rather than letting "nw0003800" through as a second evaluator.
+   */
+  const updateEmployeeId = (event) => {
+    const value = event.target.value.toUpperCase()
+    setForm((current) => ({ ...current, employee_id: value }))
+    setErrors((prev) => ({ ...prev, employee_id: undefined }))
+    setSubmitError('')
+  }
+
+  const update = (key) => (event) => {
+    const value = event.target.value
+    setForm((current) => ({ ...current, [key]: value }))
+    setErrors((prev) => ({ ...prev, [key]: undefined }))
+    setSubmitError('')
+    // Editing an identifier drops only ITS OWN verification; the session is
+    // left alone so an in-flight OTP on the other channel still resolves.
+    if (key === 'email' && verification.emailState === VERIFY.VERIFIED) {
+      verification.resetEmailVerification()
+    }
+    if (
+      (key === 'mobile_national' || key === 'country_code') &&
+      verification.phoneState === VERIFY.VERIFIED
+    ) {
+      verification.resetPhoneVerification()
+    }
+  }
+
+  const handleSubmit = async (event) => {
+    event.preventDefault()
+    const validation = validateEvaluatorForm(form)
+    setErrors(validation)
+    if (!canSubmit || Object.keys(validation).length) return
+    setLoading(true)
+    setSubmitError('')
+    try {
+      // With both channels verified the session already holds both
+      // identifiers, so its id is posted as-is — re-binding would only risk
+      // desynchronising it. A channel switched off was never bound by a Verify
+      // step, so the session is (re)opened with both identifiers first.
+      const sessionId =
+        emailRequired && phoneRequired
+          ? verification.getSessionId()
+          : await verification.ensureFullSession()
+      const data = await authApi.registerEvaluatorComplete({
+        session_id: sessionId,
+        first_name: form.first_name.trim(),
+        last_name: form.last_name.trim(),
+        employee_id: form.employee_id.trim(),
+        email: verification.email,
+        mobile_number: verification.phoneE164,
+        password: form.password,
+        confirm_password: form.confirm_password,
+      })
+      // Deliberately NOT refreshing AuthContext: the backend does set session
+      // cookies, but a pending evaluator is 403 on every evaluator route, and
+      // PublicOnlyRoute would bounce an authenticated user straight off this
+      // page to that 403 — throwing away the message they need to read.
+      setResult(data || {})
+      trackEvent('Evaluator Registered')
+      onSuccess?.(data)
+    } catch (err) {
+      const code = authErrorCode(err)
+      if (code === AUTH_ERROR.EMAIL_MISMATCH) {
+        verification.restartEmailVerification()
+      } else if (code === AUTH_ERROR.PHONE_MISMATCH) {
+        verification.restartPhoneVerification()
+      } else if (code === AUTH_ERROR.NOT_VERIFIED) {
+        // The server disagrees that this session is verified, so the green
+        // badges are stale. Drop both to re-block submit and force a re-verify.
+        verification.resetEmailVerification()
+        verification.resetPhoneVerification()
+      }
+      const field = authErrorField(err)
+      if (field) setErrors((prev) => ({ ...prev, [field]: authErrorMessage(err) }))
+      else setSubmitError(authErrorMessage(err, 'Registration failed. Please try again.'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (result) {
+    return (
+      <div className="stack-md">
+        <Alert variant="success" title={result.message || PENDING_MESSAGE}>
+          Your account is pending admin approval. Evaluator pages stay locked until an
+          administrator approves you.
+        </Alert>
+        <Button variant="accent" block onClick={() => navigate('/login')}>
+          Go to sign in
+        </Button>
+      </div>
+    )
+  }
+
+  const disabledReason = !canSubmit
+    ? !verification.bothVerified
+      ? verifyPrompt(emailRequired, phoneRequired)
+      : 'Fill every required field and match the password rules.'
+    : ''
+
+  const mobileField = (
+    <MobileField
+      countryCode={form.country_code}
+      mobileNational={form.mobile_national}
+      onChange={update}
+      error={errors.mobile_national}
+      locked={verification.phoneState === VERIFY.VERIFIED}
+    />
+  )
+
+  const emailField = (
+    <Input
+      label="Nxtwave email"
+      type="email"
+      required
+      autoComplete="email"
+      placeholder="you@nxtwave.co.in"
+      value={form.email}
+      onChange={update('email')}
+      error={errors.email}
+      disabled={verification.emailState === VERIFY.VERIFIED}
+      readOnly={verification.emailState === VERIFY.VERIFIED}
+    />
+  )
+
+  return (
+    <form className="stack-md" onSubmit={handleSubmit} noValidate>
+      {submitError && <Alert variant="danger">{submitError}</Alert>}
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Input
+          label="First name"
+          required
+          autoComplete="given-name"
+          value={form.first_name}
+          onChange={update('first_name')}
+          error={errors.first_name}
+        />
+        <Input
+          label="Last name"
+          required
+          autoComplete="family-name"
+          value={form.last_name}
+          onChange={update('last_name')}
+          error={errors.last_name}
+        />
+      </div>
+
+      <div>
+        <Input
+          id="employee-id"
+          label="Employee ID"
+          required
+          value={form.employee_id}
+          onChange={updateEmployeeId}
+          error={errors.employee_id}
+          maxLength={EMPLOYEE_ID_LENGTH}
+          autoComplete="off"
+          spellCheck={false}
+          placeholder={EMPLOYEE_ID_SAMPLE}
+          aria-invalid={employeeId ? !employeeIdValid : undefined}
+          aria-describedby="employee-id-status employee-id-format"
+        />
+        {/* Always mounted so a screen reader announces the change rather than
+            the region appearing already filled in. */}
+        <p
+          id="employee-id-status"
+          aria-live="polite"
+          className={
+            employeeId
+              ? `mt-1.5 flex items-center gap-1.5 text-[13px] font-medium ${
+                  employeeIdValid ? 'text-passed' : 'text-missing'
+                }`
+              : 'sr-only'
+          }
+        >
+          {employeeId ? (
+            <>
+              <Icon name={employeeIdValid ? 'checkCircle' : 'xCircle'} size={15} />
+              {employeeIdValid ? 'Verified' : 'Not verified'}
+            </>
+          ) : (
+            ''
+          )}
+        </p>
+        <p id="employee-id-format" className="mt-1 text-[12.5px] text-muted">
+          It looks like this: <span className={MONO}>{EMPLOYEE_ID_SAMPLE}</span>
+        </p>
+      </div>
+
+      {/* Each channel switched on verifies independently and must be green
+          before submit; a channel switched off is collected, never verified. */}
+      {emailRequired ? (
+        <OtpRow
+          label="Email"
+          state={verification.emailState}
+          code={verification.emailCode}
+          error={verification.emailError}
+          cooldown={verification.emailCooldown}
+          canStart={verification.emailReady}
+          onCodeChange={verification.setEmailCode}
+          sentTo={verification.email}
+          onVerify={verification.sendEmailOtp}
+          onConfirm={verification.confirmEmailOtp}
+          onResend={verification.sendEmailOtp}
+          extra={emailField}
+        />
+      ) : (
+        emailField
+      )}
+
+      {phoneRequired ? (
+        <OtpRow
+          label="Mobile"
+          state={verification.phoneState}
+          code={verification.phoneCode}
+          error={verification.phoneError}
+          cooldown={verification.phoneCooldown}
+          canStart={verification.phoneReady}
+          onCodeChange={verification.setPhoneCode}
+          sentTo={verification.phoneE164}
+          onVerify={verification.sendPhoneOtp}
+          onConfirm={verification.confirmPhoneOtp}
+          onResend={verification.sendPhoneOtp}
+          extra={mobileField}
+        />
+      ) : (
+        mobileField
+      )}
+      <div id={RECAPTCHA_CONTAINER_ID} />
+
+      <PasswordFields
+        password={form.password}
+        confirmPassword={form.confirm_password}
+        onPasswordChange={update('password')}
+        onConfirmPasswordChange={update('confirm_password')}
+        errors={errors}
+      />
+
+      <Button type="submit" variant="accent" block loading={loading} disabled={!canSubmit}>
+        Complete registration
+      </Button>
+      {disabledReason && <p className="text-center text-sm text-muted">{disabledReason}</p>}
+    </form>
+  )
+}

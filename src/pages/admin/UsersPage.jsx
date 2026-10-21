@@ -1,0 +1,409 @@
+import { useEffect, useState } from 'react'
+import { adminApi } from '../../api/admin'
+import { authErrorCode } from '../../api/authErrors'
+import { useAsync } from '../../hooks/useAsync'
+import { useAuth } from '../../hooks/useAuth'
+import { invalidateQueries } from '../../lib/queryCache'
+import { queryKeys } from '../../lib/queryKeys'
+import { ROLES } from '../../utils/constants'
+import { WRAP_APP } from '../../components/drop/theme'
+import PageHeader from '../../components/layout/PageHeader'
+import Card, { CardBody } from '../../components/ui/Card'
+import Button from '../../components/ui/Button'
+import Icon from '../../components/ui/Icon'
+import Input from '../../components/ui/Input'
+import Modal from '../../components/ui/Modal'
+import Alert from '../../components/ui/Alert'
+import Avatar from '../../components/ui/Avatar'
+import { RoleBadge, ApprovalBadge } from '../../components/ui/Badge'
+import { LoadingBlock } from '../../components/ui/Spinner'
+import EmptyState from '../../components/ui/EmptyState'
+import Pagination from '../../components/ui/Pagination'
+import DeleteUserModal from '../../components/admin/DeleteUserModal'
+import UserDetailsModal from '../../components/admin/UserDetailsModal'
+import { accountName, formatDate, MOBILE_KEYS, normalizeSearch } from '../../utils/format'
+
+/** Rows per page of the Student Management table. */
+const PAGE_SIZE = 15
+
+/** How long typing pauses before the search is sent. */
+const SEARCH_DELAY_MS = 300
+
+const digitsOf = (value) => String(value || '').replace(/\D/g, '')
+
+const matchesSearch = (user, needle) => {
+  const fields = [user.name, user.email, user.college_id, user.niat_id, user.employee_id, user.id]
+  if (fields.some((value) => String(value || '').toLowerCase().includes(needle))) return true
+  // A digits-only search also matches the mobile number, in any stored format.
+  return (
+    /^\d+$/.test(needle) &&
+    MOBILE_KEYS.some((key) => digitsOf(user[key]).includes(needle))
+  )
+}
+
+/**
+ * One page of students in a single shape, whichever backend answered.
+ *
+ * A paging backend returns `{ items, total }` already filtered to students and
+ * searched, so it is used as is. An older one ignores the params and returns
+ * every user as an array; then the students are picked out, searched and
+ * sliced here, newest first like the paged response.
+ */
+function toStudentPage(payload, page, search) {
+  if (!Array.isArray(payload)) {
+    return {
+      rows: Array.isArray(payload?.items) ? payload.items : [],
+      total: Number(payload?.total) || 0,
+    }
+  }
+  const needle = search.toLowerCase()
+  const students = payload
+    .filter((user) => user.role === 'student')
+    .filter((user) => !needle || matchesSearch(user, needle))
+    .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+  const start = (page - 1) * PAGE_SIZE
+  return { rows: students.slice(start, start + PAGE_SIZE), total: students.length }
+}
+
+/** What deleting a student does, shown in the confirmation. */
+const STUDENT_DELETE_CONSEQUENCES = [
+  'Their profile and login are removed — this email can no longer sign in to this account.',
+  'They are removed from every round and team. If they led a team, the next member becomes leader; a team with no one left is removed.',
+  'Submissions they already made stay on the hackathon.',
+]
+
+function deleteErrorMessage(err) {
+  switch (authErrorCode(err)) {
+    case 'USER_NOT_FOUND':
+      return 'This student no longer exists. The list has been refreshed.'
+    case 'NOT_A_STUDENT':
+      return 'Only student accounts can be deleted here.'
+    default:
+      return err?.status === 403
+        ? 'Only a Super Admin can delete students.'
+        : err?.message || 'Unable to delete this student.'
+  }
+}
+
+export default function UsersPage() {
+  const { user: me } = useAuth()
+  // Deleting a student is Super Admin only; the API refuses anyone else (403).
+  const canDelete = me?.role === ROLES.SUPER_ADMIN
+
+  const [query, setQuery] = useState('')
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+
+  // Search once typing pauses, from the first page.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearch(normalizeSearch(query))
+      setPage(1)
+    }, SEARCH_DELAY_MS)
+    return () => clearTimeout(timer)
+  }, [query])
+
+  // Keyed per page and search — never queryKeys.adminUsers, which the
+  // dashboard prefetch fills with the full user array.
+  const pageKey = queryKeys.adminStudentsPage(page, search)
+  const { data, loading, error, reload, setData } = useAsync(
+    async (opts) => {
+      const payload = await adminApi.getUsersPage(
+        { page, page_size: PAGE_SIZE, role: 'student', q: search || undefined },
+        opts,
+      )
+      // Tagged with its key: on a page change useAsync keeps the previous
+      // rows without flagging a load, and the tag is how the table knows to dim.
+      return { key: pageKey, ...toStudentPage(payload, page, search) }
+    },
+    { key: pageKey, staleTime: 30_000 },
+  )
+
+  const rows = data?.rows || []
+  const total = data?.total || 0
+  const stale = Boolean(data) && data.key !== pageKey
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  // A page that emptied out (after an edit, or a smaller search) steps back
+  // to the last page that still has rows.
+  if (data && !stale && !loading && page > totalPages) setPage(totalPages)
+
+  const [editing, setEditing] = useState(null)
+  // The student whose details are open.
+  const [viewing, setViewing] = useState(null)
+  const [name, setName] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
+
+  // The student awaiting delete confirmation.
+  const [deleting, setDeleting] = useState(null)
+  const [deleteError, setDeleteError] = useState('')
+  const [removing, setRemoving] = useState(false)
+
+  const askDelete = (user) => {
+    setDeleting(user)
+    setDeleteError('')
+  }
+
+  const studentName = (user) => accountName(user, 'this student')
+
+  const confirmDelete = async () => {
+    if (!deleting) return
+    setRemoving(true)
+    setDeleteError('')
+
+    const result = await adminApi.deleteUser(deleting.id).then(
+      () => 'deleted',
+      (err) => {
+        setDeleteError(deleteErrorMessage(err))
+        // Already gone: drop the stale row the same way a delete would.
+        return authErrorCode(err) === 'USER_NOT_FOUND' ? 'missing' : null
+      },
+    )
+
+    setRemoving(false)
+    if (!result) return
+    if (result === 'deleted') setDeleting(null)
+
+    // Every cached student page (and the dashboard's counts) is now off by
+    // one, so drop them; only this page is patched in place.
+    invalidateQueries(queryKeys.adminUsers)
+    invalidateQueries(queryKeys.adminOverview)
+
+    const lastOnPage = rows.length <= 1
+    if (lastOnPage && page > 1) {
+      // The page emptied: step back one, which refetches (its cache is gone).
+      setPage(page - 1)
+    } else if (lastOnPage || result === 'missing') {
+      reload({ force: true })
+    } else {
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              rows: current.rows.filter((row) => row.id !== deleting.id),
+              total: Math.max(0, (current.total || 0) - 1),
+            }
+          : current,
+      )
+    }
+  }
+
+  const openEdit = (user) => {
+    setEditing(user)
+    setName(user.name || '')
+    setSaveError('')
+  }
+
+  const save = async () => {
+    if (!name.trim()) {
+      setSaveError('Name cannot be empty.')
+      return
+    }
+    setSaving(true)
+    setSaveError('')
+    try {
+      await adminApi.updateUser(editing.id, { name: name.trim() })
+      setEditing(null)
+      // Same page, fresh from the server — the edit may change the search match.
+      reload({ force: true })
+    } catch (err) {
+      setSaveError(err.message || 'Failed to update user.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className={`${WRAP_APP} py-7 md:py-10`}>
+      <PageHeader
+        eyebrow="Administration"
+        title="Student Management"
+        description="View and manage all registered student teams."
+        actions={
+          <Button variant="secondary" onClick={() => reload({ force: true })} leftIcon={<Icon name="refresh" size={18} />}>
+            Refresh
+          </Button>
+        }
+      />
+
+      <div style={{ maxWidth: 360, marginBottom: 20 }}>
+        <div className="input-group">
+          <input
+            className="input"
+            placeholder="Search by name, email, ID or mobile"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            aria-label="Search students"
+            style={{ paddingLeft: 38 }}
+          />
+          <span
+            className="input-group__addon"
+            style={{ left: 4, right: 'auto', pointerEvents: 'none' }}
+          >
+            <Icon name="search" size={18} />
+          </span>
+        </div>
+      </div>
+
+      {error && (
+        <div style={{ marginBottom: 20 }}>
+          <Alert variant="danger" title="Failed to load users">
+            {error.message}
+          </Alert>
+        </div>
+      )}
+
+      {!data && loading ? (
+        <LoadingBlock label="Loading students…" />
+      ) : rows.length ? (
+        <>
+        <div
+          className={`table-wrap transition-opacity ${stale || loading ? 'opacity-60' : ''}`}
+          aria-busy={stale || loading}
+        >
+          <table className="table">
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Role</th>
+                <th>Identifier</th>
+                <th>Status</th>
+                <th>Joined</th>
+                <th aria-label="Actions" />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((u) => (
+                <tr key={u.id}>
+                  <td>
+                    <div className="row" style={{ gap: 10 }}>
+                      <Avatar name={u.name} size="sm" />
+                      <div>
+                        <div style={{ fontWeight: 600 }}>{u.name}</div>
+                        <div className="text-xs text-muted">{u.email}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <RoleBadge role={u.role} />
+                  </td>
+                  <td className="text-sm mono">
+                    {u.college_id || u.niat_id || u.employee_id || '—'}
+                  </td>
+                  <td>{u.approval_status ? <ApprovalBadge status={u.approval_status} /> : '—'}</td>
+                  <td className="text-sm text-muted">{formatDate(u.created_at)}</td>
+                  <td style={{ textAlign: 'right' }}>
+                    <div className="row" style={{ justifyContent: 'flex-end', gap: 6 }}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setViewing(u)}
+                        leftIcon={<Icon name="eye" size={16} />}
+                      >
+                        View details
+                      </Button>
+                      {canDelete && (
+                        <button
+                          type="button"
+                          className="icon-btn icon-btn--danger"
+                          onClick={() => askDelete(u)}
+                          aria-label={`Delete ${studentName(u)}`}
+                          title="Delete student"
+                        >
+                          <Icon name="trash" size={17} />
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <Pagination
+          page={page}
+          total={total}
+          pageSize={PAGE_SIZE}
+          disabled={stale || loading}
+          label="Student pages"
+          onChange={setPage}
+        />
+        </>
+      ) : !error ? (
+        <Card>
+          <CardBody>
+            <EmptyState
+              icon="users"
+              title="No students found"
+              description={search ? 'Try a different search.' : 'Registered students will appear here.'}
+            />
+          </CardBody>
+        </Card>
+      ) : null}
+
+      {viewing && (
+        <UserDetailsModal
+          key={viewing.id}
+          user={viewing}
+          onClose={() => setViewing(null)}
+          onEdit={(user) => {
+            setViewing(null)
+            openEdit(user)
+          }}
+          onDelete={
+            canDelete
+              ? (user) => {
+                  setViewing(null)
+                  askDelete(user)
+                }
+              : undefined
+          }
+        />
+      )}
+
+      <DeleteUserModal
+        account={deleting}
+        title="Delete student"
+        consequences={STUDENT_DELETE_CONSEQUENCES}
+        error={deleteError}
+        deleting={removing}
+        onCancel={() => setDeleting(null)}
+        onConfirm={confirmDelete}
+      />
+
+      <Modal
+        open={!!editing}
+        onClose={() => !saving && setEditing(null)}
+        title="Edit user"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setEditing(null)} disabled={saving}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={save} loading={saving}>
+              Save changes
+            </Button>
+          </>
+        }
+      >
+        <div className="stack-md">
+          {saveError && <Alert variant="danger">{saveError}</Alert>}
+          <div className="row" style={{ gap: 12 }}>
+            <Avatar name={name || editing?.name} />
+            <div>
+              <div style={{ fontWeight: 600 }}>{editing?.email}</div>
+              <div className="text-xs text-muted">{editing?.role}</div>
+            </div>
+          </div>
+          <Input
+            label="Full name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            maxLength={100}
+          />
+        </div>
+      </Modal>
+    </div>
+  )
+}
