@@ -147,6 +147,16 @@ export const hackathonsApi = {
       options,
     ),
 
+  /**
+   * Undo Solo, team leader or team member and go back to the role choice.
+   * Only while `can_revert` is true on /participation. Answers with the
+   * participation object in its before-choosing state. 409 TEAM_HAS_MEMBERS
+   * for a leader with teammates; 409 ALREADY_SUBMITTED once anything was
+   * submitted for that choice.
+   */
+  revertEnrollment: (hackathonId, roundIndex, options) =>
+    api.post(`${roundPath(hackathonId, roundIndex)}/enroll/revert`, undefined, options),
+
   /** Member joins with a 6-digit code. */
   joinTeam: (hackathonId, roundIndex, code, options) =>
     api.post(`${roundPath(hackathonId, roundIndex)}/teams/join`, { code }, options),

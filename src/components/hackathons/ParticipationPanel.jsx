@@ -32,6 +32,10 @@ import {
  *
  * `pending_action` from the backend is the source of truth for what to show —
  * the client never infers enrollment state from its own last action.
+ *
+ * Change choice appears only while `can_revert` is true. The revert answers
+ * with the participation object as it was before choosing, which replaces the
+ * loaded one directly so the role buttons redraw from it.
  */
 /** Actions the panel renders a step for; anything else falls back to team size. */
 const KNOWN_PENDING_ACTIONS = [
@@ -52,7 +56,7 @@ export default function ParticipationPanel({ hackathonId, roundIndex = 0, round,
     (options) => hackathonsApi.participation(hackathonId, roundIndex, options),
     [hackathonId, roundIndex],
   )
-  const { data, loading, error, reload } = useAsync(fetcher, {
+  const { data, loading, error, reload, setData } = useAsync(fetcher, {
     enabled: Boolean(hackathonId) && !awaitingRelease,
   })
 
@@ -63,6 +67,7 @@ export default function ParticipationPanel({ hackathonId, roundIndex = 0, round,
   const [joinCode, setJoinCode] = useState('')
   const [teamName, setTeamName] = useState('')
   const [issuedCode, setIssuedCode] = useState(null)
+  const [confirmRevert, setConfirmRevert] = useState(false)
 
   useEffect(() => {
     if (data && onState) onState(data)
@@ -85,6 +90,30 @@ export default function ParticipationPanel({ hackathonId, roundIndex = 0, round,
         await reload()
       }
       return null
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const revert = async () => {
+    setBusy('revert')
+    setActionError('')
+    setNotice('')
+    try {
+      const next = await hackathonsApi.revertEnrollment(hackathonId, roundIndex)
+      // Start the choice over from nothing: no half-typed name, code or pick.
+      setChoice('')
+      setTeamName('')
+      setJoinCode('')
+      setIssuedCode(null)
+      setConfirmRevert(false)
+      if (next && typeof next === 'object') setData(next)
+      else await reload()
+      setNotice('Your choice was undone. Choose again how you are taking part.')
+    } catch (err) {
+      setActionError(participationErrorMessage(err))
+      setConfirmRevert(false)
+      if (shouldRefetchParticipation(err)) await reload()
     } finally {
       setBusy('')
     }
@@ -418,6 +447,55 @@ export default function ParticipationPanel({ hackathonId, roundIndex = 0, round,
           an open one. */}
       {enrolled && !team && (
         <p className="text-sm text-muted">You are enrolled and can submit whenever you are ready.</p>
+      )}
+
+      {/* ---------------------------- Change choice ------------------------- */}
+      {enrolled && data.can_revert === true && (
+        <div className="stack-sm border-t border-hairline pt-4">
+          {confirmRevert ? (
+            <>
+              <p className="text-sm text-ink">
+                {role === 'leader'
+                  ? `This deletes ${team?.team_name ? `“${team.team_name}”` : 'your team'} and its join code.`
+                  : role === 'member'
+                    ? `You leave ${team?.team_name ? `“${team.team_name}”` : 'your team'}. The leader and the rest of the team stay.`
+                    : 'This removes your enrollment.'}{' '}
+                You can then choose again.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="danger" size="sm" loading={busy === 'revert'} onClick={revert}>
+                  Change choice
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy === 'revert'}
+                  onClick={() => setConfirmRevert(false)}
+                >
+                  Keep my choice
+                </Button>
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm text-muted">Picked the wrong option? You can change it until anything is submitted.</p>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={Boolean(busy)}
+                onClick={() => {
+                  setActionError('')
+                  setNotice('')
+                  setConfirmRevert(true)
+                }}
+              >
+                Change choice
+              </Button>
+            </div>
+          )}
+        </div>
       )}
 
       {busy && !loading && (

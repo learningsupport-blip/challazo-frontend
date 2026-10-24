@@ -26,6 +26,10 @@ const MESSAGES = {
     'No approved evaluations yet, so there is nothing to rank. Approve at least one submission first.',
   ALREADY_PUBLISHED: 'This round is already published.',
   TEAM_NAME_REQUIRED: 'Enter a team name.',
+  // Change choice: a leader cannot undo while teammates are on the roster.
+  TEAM_HAS_MEMBERS:
+    'Your teammates have to change their choice first. Once the team is just you, you can change yours.',
+  ALREADY_SUBMITTED: 'Something has already been submitted for this choice, so it can no longer be changed.',
   // The hackathon's visibility rule no longer includes this student's
   // university and batch (it can change while the page is open).
   NOT_VISIBLE: 'This hackathon is not open to your university and batch.',
@@ -48,9 +52,15 @@ export function participationErrorMessage(err, fallback = 'Something went wrong.
  * re-read GET /participation rather than trust what it already has.
  */
 export function shouldRefetchParticipation(err) {
-  return ['TEAM_REQUIRED', 'SOLO_HACKATHON', 'ALREADY_ENROLLED', 'NOT_ENROLLED'].includes(
-    participationErrorCode(err),
-  )
+  return [
+    'TEAM_REQUIRED',
+    'SOLO_HACKATHON',
+    'ALREADY_ENROLLED',
+    'NOT_ENROLLED',
+    // A refused Change choice: can_revert is out of date.
+    'TEAM_HAS_MEMBERS',
+    'ALREADY_SUBMITTED',
+  ].includes(participationErrorCode(err))
 }
 
 /* ------------------------------- Drafts --------------------------------- */
