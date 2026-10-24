@@ -127,10 +127,13 @@ export function useRegistrationVerification({
   // the number on screen. Editing it after verifying voids both.
   // "Every required channel is verified". A channel switched off counts as
   // done; the name is kept because every caller reads it as "ready to submit".
+  // With both switched off no Verify step ever opens a session, so there is
+  // nothing to match yet; ensureFullSession opens one at submit.
+  const nothingRequired = !emailRequired && !phoneRequired
   const bothVerified =
     (!emailRequired || emailState === VERIFIED) &&
     (!phoneRequired || phoneState === VERIFIED) &&
-    (!startSession || (sessionEmail === email && sessionPhone === phoneE164))
+    (!startSession || nothingRequired || (sessionEmail === email && sessionPhone === phoneE164))
 
   useEffect(() => {
     if (emailCooldown <= 0) return undefined
@@ -280,6 +283,8 @@ export function useRegistrationVerification({
     if (startSession) {
       // Re-opening would start a new session and void both checks.
       if (sessionMatches()) return getSessionId()
+      // ...unless there are no checks to void.
+      if (nothingRequired) return bindBothSession()
       throw new Error('Your mobile number changed. Verify your email and mobile again.')
     }
     return bindSession({ email, mobile: phoneE164 })

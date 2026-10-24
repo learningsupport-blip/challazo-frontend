@@ -77,20 +77,24 @@ export const adminApi = {
     api.post('/super-admin/settings/change-profile-password', payload, options),
 
   /**
-   * Super Admin: registration verification switches (shared by students and
-   * evaluators) plus pending_count, released_count and released_now.
+   * Super Admin: verification switches per group — `student`, `evaluator` and
+   * `application_access` (admin + custom), each
+   * `{ email_verification_enabled, mobile_verification_enabled }` — plus
+   * pending_count, released_count and released_now. The top-level pair repeats
+   * the student group for older screens.
    */
   getRegistrationSettings: (options) =>
     api.get('/super-admin/settings/registration', options),
 
-  /** `{ email_verification_enabled, mobile_verification_enabled }`. Same shape back. */
+  /** All three groups together: `{ student, evaluator, application_access }`. Same shape back as the GET. */
   updateRegistrationSettings: (payload, options) =>
     api.put('/super-admin/settings/registration', payload, options),
 
   /**
-   * Mark the oldest `batchSize` (1–500) waiting students and evaluators to see
-   * the verification popup on their next sign-in. Sends no email itself;
-   * people already marked are skipped. 400 while both switches are off.
+   * Mark the oldest `batchSize` (1–500) waiting people — students, evaluators
+   * and Application Access accounts whose group has a box checked — to see the
+   * verification popup on their next sign-in. Sends no email itself; people
+   * already marked are skipped. 400 while every box in every group is off.
    */
   releaseVerification: (batchSize, options) =>
     api.post('/super-admin/settings/registration/release', { batch_size: batchSize }, options),

@@ -173,3 +173,17 @@ export function validateLoginForm(form) {
   if (!minLength(form.password, 6)) errors.password = 'Password must be at least 6 characters'
   return errors
 }
+
+/**
+ * Student headcount on a university (NIAT only) or a batch: a whole number
+ * from 1 to 1,000,000, matching the API. Returns the number, or null when the
+ * input is not a valid count.
+ */
+export const MAX_STUDENT_COUNT = 1_000_000
+
+export function parseStudentCount(value) {
+  const text = String(value ?? '').trim()
+  if (!/^\d+$/.test(text)) return null
+  const count = Number(text)
+  return count >= 1 && count <= MAX_STUDENT_COUNT ? count : null
+}

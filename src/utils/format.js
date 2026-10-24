@@ -92,6 +92,12 @@ export function formatScore(value) {
   return Math.round(Number(value) * 10) / 10
 }
 
+/** A student headcount, grouped for India ("1,200"); "—" when not recorded. */
+export function formatCount(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '—'
+  return Number(value).toLocaleString('en-IN')
+}
+
 /** Best display name for an account row: name, then first + last, then email. */
 export function accountName(account, fallback = 'this account') {
   return (

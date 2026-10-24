@@ -83,6 +83,12 @@ const ADMIN_NAV = [
     icon: 'settings',
     permission: PERMISSIONS.APPLICATION_SETTINGS,
   },
+  {
+    to: '/admin/analysis',
+    label: 'Analysis',
+    icon: 'chart',
+    permission: PERMISSIONS.ANALYSIS,
+  },
   // Super Admin only: no custom role can be given role_management.
   {
     label: 'Application Access',

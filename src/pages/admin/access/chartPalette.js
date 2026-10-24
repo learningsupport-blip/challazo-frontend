@@ -15,6 +15,12 @@ export const SERIES = {
   dark: ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767'],
 }
 
+/** Chart chrome per theme — the app's own muted ink and hairline tokens. */
+export const CHROME = {
+  dark: { muted: '#8a8a94', grid: '#333333', surface: '#1a1a1a' },
+  light: { muted: '#6c757d', grid: '#dee2e6', surface: '#ffffff' },
+}
+
 /** "Other" — what does not fit the eight slots. Neutral, never a ninth hue. */
 export const OTHER = { light: '#8a8a94', dark: '#6c6c75' }
 

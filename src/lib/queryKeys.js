@@ -25,6 +25,10 @@ export const queryKeys = {
   adminEvaluators: 'admin:evaluators',
   adminPendingEvaluators: 'admin:pending-evaluators',
   adminOverview: 'admin:overview',
+  analysisOptions: 'analysis:options',
+  /** One report per exact request body, so each filter combination caches on its own. */
+  analysisHackathons: (body) => `analysis:hackathons:${JSON.stringify(body)}`,
+  analysisEvaluators: (body) => `analysis:evaluators:${JSON.stringify(body)}`,
   accessPermissions: 'access:permissions',
   accessRoles: 'access:roles',
   accessUsers: 'access:users',

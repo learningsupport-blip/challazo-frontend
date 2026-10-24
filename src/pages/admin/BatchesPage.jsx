@@ -14,6 +14,10 @@ import Icon from '../../components/ui/Icon'
 import Input, { Select } from '../../components/ui/Input'
 import Modal from '../../components/ui/Modal'
 import { LoadingBlock } from '../../components/ui/Spinner'
+import { formatCount } from '../../utils/format'
+import { MAX_STUDENT_COUNT, parseStudentCount } from '../../utils/validators'
+
+const countText = (value) => (value === null || value === undefined ? '' : String(value))
 
 /**
  * Batches students choose from at registration, managed one university at a
@@ -63,6 +67,7 @@ export default function BatchesPage() {
 
   const [editing, setEditing] = useState(null)
   const [name, setName] = useState('')
+  const [strength, setStrength] = useState('')
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(null)
@@ -75,12 +80,15 @@ export default function BatchesPage() {
   const openCreate = () => {
     setEditing({})
     setName('')
+    setStrength('')
     setFormError('')
   }
 
   const openEdit = (batch) => {
     setEditing(batch)
     setName(batch.name || '')
+    // Null on batches saved before headcounts existed.
+    setStrength(countText(batch.total_students))
     setFormError('')
   }
 
@@ -91,10 +99,26 @@ export default function BatchesPage() {
       return
     }
 
+    // An older batch with no count yet can still be renamed with this blank;
+    // a new batch, or one that already has a count, needs a valid number.
+    const strengthText = strength.trim()
+    const keepsBlank = !!editing?.id && !strengthText && editing.total_students == null
+    const totalStudents = parseStudentCount(strengthText)
+    if (!keepsBlank && totalStudents === null) {
+      setFormError(
+        `Total students must be a whole number from 1 to ${formatCount(MAX_STUDENT_COUNT)}.`,
+      )
+      return
+    }
+
     setSaving(true)
     setFormError('')
 
+    // Edits send the strength only when it changed.
     const payload = { name: trimmed }
+    if (totalStudents !== null && (!editing?.id || totalStudents !== editing.total_students)) {
+      payload.total_students = totalStudents
+    }
     const saved = await (editing?.id
       ? batchesApi.update(universityId, editing.id, payload)
       : batchesApi.create(universityId, payload)
@@ -208,6 +232,7 @@ export default function BatchesPage() {
             <thead>
               <tr>
                 <th>Batch</th>
+                <th>Total students</th>
                 <th aria-label="Actions" />
               </tr>
             </thead>
@@ -215,13 +240,14 @@ export default function BatchesPage() {
               {batches.map((batch) => (
                 <tr key={batch.id}>
                   <td style={{ fontWeight: 600 }}>{batch.name}</td>
+                  <td>{formatCount(batch.total_students)}</td>
                   <td style={{ textAlign: 'right' }}>
                     <div className="row" style={{ justifyContent: 'flex-end', gap: 6 }}>
                       <button
                         type="button"
                         className="icon-btn"
                         onClick={() => openEdit(batch)}
-                        aria-label={`Rename ${batch.name}`}
+                        aria-label={`Edit ${batch.name}`}
                       >
                         <Icon name="edit" size={17} />
                       </button>
@@ -259,7 +285,7 @@ export default function BatchesPage() {
       <Modal
         open={!!editing}
         onClose={() => !saving && setEditing(null)}
-        title={editing?.id ? 'Rename batch' : 'Add batch'}
+        title={editing?.id ? 'Edit batch' : 'Add batch'}
         footer={
           <>
             <Button variant="ghost" disabled={saving} onClick={() => setEditing(null)}>
@@ -284,6 +310,19 @@ export default function BatchesPage() {
             onChange={(event) => setName(event.target.value)}
             hint="Must be unique within this university, e.g. 2024-2028."
             placeholder="2024-2028"
+          />
+          <Input
+            label="Total students"
+            required={!editing?.id || editing.total_students != null}
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={MAX_STUDENT_COUNT}
+            step={1}
+            value={strength}
+            onChange={(event) => setStrength(event.target.value)}
+            hint="Batch strength: students in this batch."
+            placeholder="36"
           />
         </div>
       </Modal>

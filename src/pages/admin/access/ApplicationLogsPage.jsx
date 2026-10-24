@@ -25,7 +25,7 @@ import EmptyState from '../../../components/ui/EmptyState'
 import Icon from '../../../components/ui/Icon'
 import Pagination from '../../../components/ui/Pagination'
 import { LoadingBlock } from '../../../components/ui/Spinner'
-import { AREA_SLOTS, OTHER, ROLE_SLOTS, SERIES } from './chartPalette'
+import { AREA_SLOTS, CHROME, OTHER, ROLE_SLOTS, SERIES } from './chartPalette'
 
 /** The Show control: rows per page. The API accepts exactly these. */
 const PAGE_SIZES = [25, 50, 100]
@@ -74,12 +74,6 @@ const EMPTY_FILTERS = {
   window: DEFAULT_WINDOW,
   user: null,
   slow: false,
-}
-
-/** Chart chrome per theme — the app's own muted ink and hairline tokens. */
-const CHROME = {
-  dark: { muted: '#8a8a94', grid: '#333333', surface: '#1a1a1a' },
-  light: { muted: '#6c757d', grid: '#dee2e6', surface: '#ffffff' },
 }
 
 const list = (value) =>

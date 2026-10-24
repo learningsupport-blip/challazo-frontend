@@ -21,7 +21,7 @@ import { queryKeys } from '../../lib/queryKeys'
 import { RECAPTCHA_CONTAINER_ID } from '../../lib/firebasePhone'
 import { ROLE_HOME } from '../../utils/constants'
 import { COLLEGE_ID_MAX_LENGTH, isNiatId, validateStudentForm } from '../../utils/validators'
-import { COLLEGE_TYPES } from '../../utils/constants'
+import { COLLEGE_TYPES, VERIFICATION_GROUPS } from '../../utils/constants'
 import { trackEvent } from '../../lib/logrocket'
 
 /** An ID is exactly this long, so the field stops accepting more. */
@@ -64,7 +64,7 @@ function verifyPrompt(emailRequired, phoneRequired) {
  * channel switched off keeps its field but loses its Verify step.
  */
 export default function StudentRegisterForm() {
-  const { ready, emailRequired, phoneRequired } = useRegistrationConfig()
+  const { ready, emailRequired, phoneRequired } = useRegistrationConfig(VERIFICATION_GROUPS.STUDENT)
   if (!ready) return <LoadingBlock label="Loading registration…" />
   return (
     <StudentRegisterFormBody emailRequired={emailRequired} phoneRequired={phoneRequired} />

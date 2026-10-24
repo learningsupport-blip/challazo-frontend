@@ -7,6 +7,7 @@ import Card, { CardBody, CardHeader } from '../ui/Card'
 import Icon from '../ui/Icon'
 import Input from '../ui/Input'
 import { LoadingBlock } from '../ui/Spinner'
+import { VERIFICATION_GROUPS } from '../../utils/constants'
 
 const MIN_BATCH = 1
 const MAX_BATCH = 500
@@ -19,15 +20,47 @@ function parseBatch(value) {
   return Number.isInteger(n) && n >= MIN_BATCH && n <= MAX_BATCH ? n : null
 }
 
-const switchesOf = (payload) => ({
-  email: payload?.email_verification_enabled !== false,
-  mobile: payload?.mobile_verification_enabled !== false,
-})
+const GROUPS = [
+  { key: VERIFICATION_GROUPS.STUDENT, title: 'Student', who: 'Student registration.' },
+  { key: VERIFICATION_GROUPS.EVALUATOR, title: 'Evaluator', who: 'Evaluator registration.' },
+  {
+    key: VERIFICATION_GROUPS.APPLICATION_ACCESS,
+    title: 'Application Access',
+    who: 'Admin and custom accounts, at first login.',
+  },
+]
+
+const CHANNELS = [
+  { key: 'email', label: 'Email', field: 'email_verification_enabled' },
+  { key: 'mobile', label: 'Mobile number', field: 'mobile_verification_enabled' },
+]
 
 /**
- * Super Admin: whether registration asks for an email and a mobile OTP. One
- * pair of switches covers student and evaluator registration. A switch that is
- * off still collects the field; it just skips the code.
+ * `{ student: { email, mobile }, evaluator: …, application_access: … }`. A
+ * response without a group (an older API) falls back to the top-level pair.
+ */
+const switchesOf = (payload) =>
+  Object.fromEntries(
+    GROUPS.map(({ key }) => {
+      const group = payload?.[key] || payload
+      return [
+        key,
+        Object.fromEntries(CHANNELS.map((c) => [c.key, group?.[c.field] !== false])),
+      ]
+    }),
+  )
+
+const sameSwitches = (a, b) =>
+  GROUPS.every(({ key }) => CHANNELS.every((c) => a[key][c.key] === b[key][c.key]))
+
+const anySwitchOn = (switches) =>
+  GROUPS.some(({ key }) => CHANNELS.some((c) => switches[key][c.key]))
+
+/**
+ * Super Admin: whether registration asks for an email and a mobile OTP, set
+ * separately for students, evaluators and Application Access (admin and
+ * custom accounts, at first login). Super Admin is never asked to verify. A
+ * box that is off still collects the field; it just skips the code.
  *
  * Turning a switch back on does not prompt anyone by itself. People who
  * registered while it was off wait until Send verification marks a batch of
@@ -37,7 +70,7 @@ const switchesOf = (payload) => ({
  */
 export default function ApplicationConfigPanel() {
   const [state, setState] = useState(null)
-  const [switches, setSwitches] = useState({ email: true, mobile: true })
+  const [switches, setSwitches] = useState(() => switchesOf(null))
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
 
@@ -77,11 +110,14 @@ export default function ApplicationConfigPanel() {
   }, [])
 
   const saved = switchesOf(state)
-  const dirty = switches.email !== saved.email || switches.mobile !== saved.mobile
+  const dirty = !sameSwitches(switches, saved)
 
-  const toggle = (key) => (event) => {
+  const toggle = (group, channel) => (event) => {
     const { checked } = event.target
-    setSwitches((current) => ({ ...current, [key]: checked }))
+    setSwitches((current) => ({
+      ...current,
+      [group]: { ...current[group], [channel]: checked },
+    }))
     setSaveError('')
     setSaveMessage('')
   }
@@ -92,11 +128,15 @@ export default function ApplicationConfigPanel() {
     setSaveMessage('')
     // The API client sends the X-CSRF-Token header on writes, as for the
     // Profile Password.
+    // All three groups are written together.
+    const body = Object.fromEntries(
+      GROUPS.map(({ key }) => [
+        key,
+        Object.fromEntries(CHANNELS.map((c) => [c.field, switches[key][c.key]])),
+      ]),
+    )
     const payload = await adminApi
-      .updateRegistrationSettings({
-        email_verification_enabled: switches.email,
-        mobile_verification_enabled: switches.mobile,
-      })
+      .updateRegistrationSettings(body)
       .catch((error) => {
         setSaveError(error?.message || 'Unable to save the application config.')
         return null
@@ -108,7 +148,7 @@ export default function ApplicationConfigPanel() {
   }
 
   const batchSize = parseBatch(batch)
-  const anyOn = saved.email || saved.mobile
+  const anyOn = anySwitchOn(saved)
 
   const release = async () => {
     setReleasing(true)
@@ -135,7 +175,7 @@ export default function ApplicationConfigPanel() {
         <div>
           <h3>Application config</h3>
           <p className="text-sm text-muted">
-            Registration verification for students and evaluators.
+            Email and mobile verification for students, evaluators and Application Access.
           </p>
         </div>
         <Icon name="settings" size={20} className="text-muted" />
@@ -153,34 +193,48 @@ export default function ApplicationConfigPanel() {
               {saveError && <Alert variant="danger">{saveError}</Alert>}
               {saveMessage && <Alert variant="success">{saveMessage}</Alert>}
 
-              <label className="hackathon-video-toggle">
-                <input
-                  type="checkbox"
-                  checked={switches.email}
-                  disabled={saving}
-                  onChange={toggle('email')}
-                />
-                <span>
-                  <strong>Email verification</strong>
-                  <small>Registration asks for an email code. Off: the email is collected, not verified.</small>
-                </span>
-              </label>
-              <label className="hackathon-video-toggle">
-                <input
-                  type="checkbox"
-                  checked={switches.mobile}
-                  disabled={saving}
-                  onChange={toggle('mobile')}
-                />
-                <span>
-                  <strong>Mobile number verification</strong>
-                  <small>Registration asks for an SMS code. Off: the number is collected, not verified.</small>
-                </span>
-              </label>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                {GROUPS.map((group) => (
+                  <fieldset
+                    key={group.key}
+                    className="min-w-0 rounded-drop border border-hairline p-3.5"
+                  >
+                    <legend className="px-1 text-[14px] font-semibold text-ink">
+                      {group.title}
+                    </legend>
+                    <p className="mb-3 text-[12.5px] text-muted">{group.who}</p>
+                    <div className="stack-sm">
+                      {CHANNELS.map((channel) => (
+                        <label key={channel.key} className="hackathon-video-toggle">
+                          <input
+                            type="checkbox"
+                            checked={switches[group.key][channel.key]}
+                            disabled={saving}
+                            onChange={toggle(group.key, channel.key)}
+                          />
+                          <span>
+                            <strong>{channel.label}</strong>
+                            <small>
+                              {switches[group.key][channel.key]
+                                ? 'Asks for a code.'
+                                : 'Collected, not verified.'}
+                            </small>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                ))}
+              </div>
+              <p className="text-[12.5px] text-muted">
+                Super Admin is never asked to verify. A box that is off still collects the email or
+                mobile number; it is stored as not verified.
+              </p>
 
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-[12.5px] text-muted">
-                  Turning a switch back on does not prompt anyone. Use Send verification below.
+                  Saves all three groups. Turning a box back on does not prompt anyone. Use Send
+                  verification below.
                 </p>
                 <Button variant="accent" loading={saving} disabled={!dirty || saving} onClick={save}>
                   Save
@@ -192,8 +246,9 @@ export default function ApplicationConfigPanel() {
               <div>
                 <h4 className="text-[15px] font-semibold text-ink">Send verification</h4>
                 <p className="mt-1 text-[13px] text-muted">
-                  Marks the oldest waiting students and evaluators to verify on their next sign-in.
-                  No email is sent from here; people already marked are skipped.
+                  Marks the oldest waiting people to verify on their next sign-in: students,
+                  evaluators and Application Access accounts, for the boxes checked for their
+                  group. No email is sent from here; people already marked are skipped.
                 </p>
               </div>
 
@@ -265,7 +320,8 @@ export default function ApplicationConfigPanel() {
               </div>
               {!anyOn && (
                 <p className="text-[12.5px] text-muted">
-                  Turn email or mobile verification on (and save) before sending it.
+                  Turn email or mobile verification on for at least one group (and save) before
+                  sending it.
                 </p>
               )}
             </div>

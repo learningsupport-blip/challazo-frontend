@@ -14,7 +14,7 @@ import { AUTH_ERROR, authErrorCode, authErrorField, authErrorMessage } from '../
 import { useRegistrationConfig } from '../../hooks/useRegistrationConfig'
 import { VERIFY, useRegistrationVerification } from '../../hooks/useRegistrationVerification'
 import { RECAPTCHA_CONTAINER_ID } from '../../lib/firebasePhone'
-import { ROLES } from '../../utils/constants'
+import { ROLES, VERIFICATION_GROUPS } from '../../utils/constants'
 import { isEmployeeId, isNxtwaveEmail, validateEvaluatorForm } from '../../utils/validators'
 import { trackEvent } from '../../lib/logrocket'
 
@@ -56,7 +56,7 @@ function verifyPrompt(emailRequired, phoneRequired) {
  * channel switched off keeps its field but loses its Verify step.
  */
 export default function EvaluatorRegisterForm({ onSuccess }) {
-  const { ready, emailRequired, phoneRequired } = useRegistrationConfig()
+  const { ready, emailRequired, phoneRequired } = useRegistrationConfig(VERIFICATION_GROUPS.EVALUATOR)
   if (!ready) return <LoadingBlock label="Loading registration…" />
   return (
     <EvaluatorRegisterFormBody onSuccess={onSuccess} emailRequired={emailRequired} phoneRequired={phoneRequired} />

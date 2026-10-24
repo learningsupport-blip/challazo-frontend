@@ -18,6 +18,7 @@ export const PERMISSIONS = {
   UNIVERSITY_MANAGEMENT: 'university_management',
   BATCH_MANAGEMENT: 'batch_management',
   APPLICATION_SETTINGS: 'application_settings',
+  ANALYSIS: 'analysis',
   ROLE_MANAGEMENT: 'role_management',
 }
 
@@ -87,6 +88,7 @@ export const ADMIN_SCREENS = [
   { permission: PERMISSIONS.UNIVERSITY_MANAGEMENT, to: '/admin/universities' },
   { permission: PERMISSIONS.BATCH_MANAGEMENT, to: '/admin/batches' },
   { permission: PERMISSIONS.APPLICATION_SETTINGS, to: '/admin/settings' },
+  { permission: PERMISSIONS.ANALYSIS, to: '/admin/analysis' },
   { permission: PERMISSIONS.ROLE_MANAGEMENT, to: '/admin/access/roles' },
 ]
 

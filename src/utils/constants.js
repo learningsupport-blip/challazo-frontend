@@ -17,6 +17,17 @@ export const COLLEGE_TYPES = {
   NON_NIAT: 'Non NIAT',
 }
 
+/**
+ * Verification settings come in three groups, each with its own email and
+ * mobile switch. Application Access covers admin and custom accounts; Super
+ * Admin is never asked to verify.
+ */
+export const VERIFICATION_GROUPS = {
+  STUDENT: 'student',
+  EVALUATOR: 'evaluator',
+  APPLICATION_ACCESS: 'application_access',
+}
+
 export const APPROVAL_STATUS = {
   PENDING: 'pending',
   APPROVED: 'approved',

@@ -14,8 +14,10 @@ import Input, { Select } from '../../components/ui/Input'
 import Modal from '../../components/ui/Modal'
 import { LoadingBlock } from '../../components/ui/Spinner'
 import { COLLEGE_TYPES } from '../../utils/constants'
+import { formatCount } from '../../utils/format'
+import { MAX_STUDENT_COUNT, parseStudentCount } from '../../utils/validators'
 
-const EMPTY_FORM = { name: '', location: '', college_type: COLLEGE_TYPES.NIAT }
+const EMPTY_FORM = { name: '', location: '', college_type: COLLEGE_TYPES.NIAT, total_students: '' }
 
 /**
  * Campus catalogue behind the student register form.
@@ -55,6 +57,11 @@ export default function UniversitiesPage() {
       location: university.location || '',
       // A university saved before college types existed is NIAT.
       college_type: university.college_type || COLLEGE_TYPES.NIAT,
+      // Null on universities saved before headcounts existed.
+      total_students:
+        university.total_students === null || university.total_students === undefined
+          ? ''
+          : String(university.total_students),
     })
     setFormError('')
   }
@@ -71,10 +78,23 @@ export default function UniversitiesPage() {
       return
     }
 
+    const collegeType = form.college_type || COLLEGE_TYPES.NIAT
+    const isNiat = collegeType === COLLEGE_TYPES.NIAT
+    const totalStudents = isNiat ? parseStudentCount(form.total_students) : null
+    if (isNiat && totalStudents === null) {
+      setFormError(
+        `Total students must be a whole number from 1 to ${formatCount(MAX_STUDENT_COUNT)}.`,
+      )
+      return
+    }
+
     setSaving(true)
     setFormError('')
 
-    const payload = { name, location, college_type: form.college_type || COLLEGE_TYPES.NIAT }
+    // The API takes a headcount only for NIAT and rejects one for Non NIAT
+    // (switching to Non NIAT clears the stored count on its own).
+    const payload = { name, location, college_type: collegeType }
+    if (isNiat) payload.total_students = totalStudents
     const saved = await (editing?.id
       ? universitiesApi.update(editing.id, payload)
       : universitiesApi.create(payload)
@@ -145,6 +165,7 @@ export default function UniversitiesPage() {
                 <th>Name</th>
                 <th>Location</th>
                 <th>College type</th>
+                <th>Total students</th>
                 <th aria-label="Actions" />
               </tr>
             </thead>
@@ -158,6 +179,11 @@ export default function UniversitiesPage() {
                   </td>
                   <td>{university.location}</td>
                   <td>{university.college_type || COLLEGE_TYPES.NIAT}</td>
+                  <td>
+                    {(university.college_type || COLLEGE_TYPES.NIAT) === COLLEGE_TYPES.NIAT
+                      ? formatCount(university.total_students)
+                      : '—'}
+                  </td>
                   <td style={{ textAlign: 'right' }}>
                     <div className="row" style={{ justifyContent: 'flex-end', gap: 6 }}>
                       <button
@@ -251,6 +277,23 @@ export default function UniversitiesPage() {
             <option value={COLLEGE_TYPES.NIAT}>NIAT</option>
             <option value={COLLEGE_TYPES.NON_NIAT}>Non NIAT</option>
           </Select>
+          {form.college_type === COLLEGE_TYPES.NIAT && (
+            <Input
+              label="Total students"
+              required
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={MAX_STUDENT_COUNT}
+              step={1}
+              value={form.total_students}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, total_students: event.target.value }))
+              }
+              hint="Students on this campus, from 1 to 10,00,000."
+              placeholder="1200"
+            />
+          )}
         </div>
       </Modal>
 

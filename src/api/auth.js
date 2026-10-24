@@ -65,7 +65,8 @@ export const authApi = {
   profileComplete: (payload) => api.post('/auth/profile/complete', payload),
 
   /**
-   * Public: which registration channels need an OTP right now,
+   * Public: which channels need an OTP right now, per group — `student`,
+   * `evaluator` and `application_access`, each
    * `{ email_verification_enabled, mobile_verification_enabled }`. A channel
    * that is off is still collected on the form, just not verified.
    */

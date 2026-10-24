@@ -63,6 +63,7 @@ const UniversitiesPage = lazy(() => import('./pages/admin/UniversitiesPage'))
 const BatchesPage = lazy(() => import('./pages/admin/BatchesPage'))
 const AiPromptsPage = lazy(() => import('./pages/admin/AiPromptsPage'))
 const ApplicationSettingsPage = lazy(() => import('./pages/admin/ApplicationSettingsPage'))
+const AnalysisPage = lazy(() => import('./pages/admin/analysis/AnalysisPage'))
 const AccessRolesPage = lazy(() => import('./pages/admin/access/AccessRolesPage'))
 const AccessUsersPage = lazy(() => import('./pages/admin/access/AccessUsersPage'))
 // Carries recharts, so only Super Admin ever downloads it.
@@ -160,6 +161,9 @@ function adminShellRoutes(base) {
       </Route>
       <Route element={<AdminRoute permission={PERMISSIONS.APPLICATION_SETTINGS} />}>
         <Route path={`${base}/settings`} element={<ApplicationSettingsPage />} />
+      </Route>
+      <Route element={<AdminRoute permission={PERMISSIONS.ANALYSIS} />}>
+        <Route path={`${base}/analysis`} element={<AnalysisPage />} />
       </Route>
       <Route element={<AdminRoute permission={PERMISSIONS.ROLE_MANAGEMENT} />}>
         <Route path={`${base}/access`} element={<Navigate to={`${base}/access/roles`} replace />} />
