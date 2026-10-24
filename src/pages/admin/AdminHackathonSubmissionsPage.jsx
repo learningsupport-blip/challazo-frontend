@@ -240,15 +240,19 @@ export default function AdminHackathonSubmissionsPage() {
   const [teamSubmission, setTeamSubmission] = useState(null)
 
   /**
-   * The evaluator dropdown changed. A first assignment saves at once; changing
-   * or removing an evaluator who is already assigned asks for a reason first.
+   * The evaluator dropdown changed. Compared by id, never by the label:
+   * - the same evaluator: nothing happens;
+   * - Unassigned, or a first assignment: saves at once, no remark;
+   * - one evaluator replaced by another: asks for a remark first.
+   * The select is controlled by the row, so until a save lands it keeps
+   * showing the current evaluator — Cancel needs nothing to restore.
    */
   const onAssign = (submissionId, evaluatorId) => {
     const submission = submissions.find((item) => item.id === submissionId)
     const current = submission?.assigned_evaluator_id || null
     const next = evaluatorId || null
     if (current === next) return
-    if (current) {
+    if (current && next) {
       setChangeError('')
       setPendingChange({
         submission,
@@ -278,9 +282,7 @@ export default function AdminHackathonSubmissionsPage() {
       const queuedAi = !alreadyAnalysed && updated.status === 'processing'
       if (!evaluatorId) {
         setActionMessage(
-          previousEvaluator
-            ? `${previousEvaluator} was removed. The change is logged with your reason.`
-            : 'Submission is now unassigned.',
+          previousEvaluator ? `${previousEvaluator} was removed. The submission is now unassigned.` : 'Submission is now unassigned.',
         )
       } else if (reason) {
         setActionMessage(
