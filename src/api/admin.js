@@ -99,6 +99,23 @@ export const adminApi = {
   releaseVerification: (batchSize, options) =>
     api.post('/super-admin/settings/registration/release', { batch_size: batchSize }, options),
 
+  /**
+   * Super Admin: how video AI analysis is split between the personal and the
+   * company evaluator service — personal_share, company_share, next_index,
+   * sequence, summary, scope and workers (key, name, project_id, configured,
+   * share, url). GitHub AI evaluation is not part of it.
+   */
+  getEvaluationRouting: (options) =>
+    api.get('/super-admin/settings/evaluation-routing', options),
+
+  /**
+   * `{ personal_share, company_share }`, each 0–20 with at least one above 0
+   * (400 otherwise, reason in `detail`). Same shape back as the GET; saving
+   * restarts the pattern from its first video.
+   */
+  updateEvaluationRouting: (payload, options) =>
+    api.put('/super-admin/settings/evaluation-routing', payload, options),
+
   /** Wipe wipeable collections after Profile Password + confirm phrase. */
   resetDatabase: (payload, options) =>
     api.post('/super-admin/settings/reset-database', payload, options),

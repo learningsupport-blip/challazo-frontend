@@ -12,6 +12,7 @@ import { LoadingBlock } from '../../components/ui/Spinner'
 import { useAdminPath } from '../../hooks/useAdminPath'
 import ApplicationConfigPanel from '../../components/admin/ApplicationConfigPanel'
 import DeleteHackathonPanel from '../../components/admin/DeleteHackathonPanel'
+import EvaluationRoutingPanel from '../../components/admin/EvaluationRoutingPanel'
 
 const PROFILE_FORM = {
   current_profile_password: '',
@@ -428,7 +429,7 @@ export default function ApplicationSettingsPage() {
       )}
 
       <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-2 xl:gap-6">
-        {/* Left column: Profile Password, then Application config under it. */}
+        {/* Left column: Profile Password, Application config, then the video analysis split. */}
         <div className="flex min-w-0 flex-col gap-5 xl:gap-6">
           <Card className="min-w-0">
             <CardHeader>
@@ -495,6 +496,7 @@ export default function ApplicationSettingsPage() {
           </Card>
 
           <ApplicationConfigPanel />
+          <EvaluationRoutingPanel />
         </div>
 
         <section className={`${PANEL} min-w-0 overflow-hidden border-missing/30`}>
