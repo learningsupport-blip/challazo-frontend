@@ -35,3 +35,5 @@ export const accordionManualPending = accordionStyles.manualPending
 export const modalAnalysisDetail = modalStyles.analysisDetail
 /** Fits the viewport and scrolls its body — for tall read-only dialogs. */
 export const modalScrollable = modalStyles.scrollable
+/** Wide form dialog that scrolls only its body, keeping the title and Save in view. */
+export const modalWide = modalStyles.wide

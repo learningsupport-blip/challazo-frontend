@@ -58,6 +58,10 @@ const AdminSubmissionDetailPage = lazy(() => import('./pages/admin/AdminSubmissi
 const AdminHackathonSubmissionsPage = lazy(
   () => import('./pages/admin/AdminHackathonSubmissionsPage'),
 )
+const ExternalHackathonsPage = lazy(() => import('./pages/admin/ExternalHackathonsPage'))
+const ExternalHackathonDetailPage = lazy(() => import('./pages/admin/ExternalHackathonDetailPage'))
+// Public: opened from Launchpad with no Challazo session.
+const ExternalSubmitPage = lazy(() => import('./pages/external/ExternalSubmitPage'))
 const ThemesPage = lazy(() => import('./pages/admin/ThemesPage'))
 const UniversitiesPage = lazy(() => import('./pages/admin/UniversitiesPage'))
 const BatchesPage = lazy(() => import('./pages/admin/BatchesPage'))
@@ -116,6 +120,11 @@ function adminShellRoutes(base) {
         <Route
           path={`${base}/hackathons/:hackathonId/settings`}
           element={<HackathonSettingsPage />}
+        />
+        <Route path={`${base}/external-hackathons`} element={<ExternalHackathonsPage />} />
+        <Route
+          path={`${base}/external-hackathons/:hackathonId`}
+          element={<ExternalHackathonDetailPage />}
         />
       </Route>
       <Route element={<AdminRoute permission={PERMISSIONS.SUBMISSIONS} />}>
@@ -190,6 +199,11 @@ export default function App() {
         <Suspense fallback={<RouteFallback />}>
           <Routes>
             <Route path="/" element={<DropLandingPage />} />
+            {/* The form_url the API hands out; no sign-in, no app chrome. */}
+            <Route
+              path="/external-hackathons/:hackathonId/submit"
+              element={<ExternalSubmitPage />}
+            />
 
             <Route element={<PublicOnlyRoute />}>
               <Route path="/login" element={<LoginPage />} />

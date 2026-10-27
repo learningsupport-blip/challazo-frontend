@@ -194,9 +194,18 @@ async function parseBody(res) {
  * @param {FormData} [options.formData]
  * @param {object} [options.headers]
  * @param {AbortSignal} [options.signal]
+ * @param {boolean} [options.anonymous]  Public route: no cookie, no CSRF header, no session-expiry signal.
  */
 export async function request(path, options = {}) {
-  const { method = 'GET', body, formData, headers = {}, signal, isCsrfRetry = false } = options
+  const {
+    method = 'GET',
+    body,
+    formData,
+    headers = {},
+    signal,
+    isCsrfRetry = false,
+    anonymous = false,
+  } = options
   const normalizedMethod = method.toUpperCase()
 
   const finalHeaders = { ...headers }
@@ -206,6 +215,7 @@ export async function request(path, options = {}) {
   // Double-submit CSRF: send X-CSRF-Token from login JSON / GET /auth/csrf
   // (sessionStorage + memory). Cookie fallback only works same-origin.
   if (
+    !anonymous &&
     MUTATING_METHODS.has(normalizedMethod) &&
     !Object.keys(finalHeaders).some(
       (name) => name.toLowerCase() === CSRF_HEADER_NAME.toLowerCase(),
@@ -238,7 +248,7 @@ export async function request(path, options = {}) {
       method: normalizedMethod,
       headers: finalHeaders,
       body: payload,
-      credentials: 'include',
+      credentials: anonymous ? 'omit' : 'include',
       signal,
     })
   } catch (err) {
@@ -256,7 +266,7 @@ export async function request(path, options = {}) {
     // says "Not authenticated" (cookie gone) or "ID token has expired" (cookie
     // present, JWT stale). 403 is deliberately excluded: that is a CSRF or a
     // role check, and neither means the session is dead.
-    if (res.status === 401 && !path.startsWith(SIGN_OUT_PATH)) {
+    if (res.status === 401 && !anonymous && !path.startsWith(SIGN_OUT_PATH)) {
       notifySessionExpired(path)
     }
 

@@ -32,6 +32,12 @@ const ADMIN_NAV = [
   { to: '/admin', label: 'Overview', icon: 'chart', end: true, permission: PERMISSIONS.OVERVIEW },
   { to: '/admin/submissions', label: 'Submissions', icon: 'video', permission: PERMISSIONS.SUBMISSIONS },
   { to: '/hackathons', label: 'Hackathons', icon: 'trophy', permission: PERMISSIONS.HACKATHONS },
+  {
+    to: '/admin/external-hackathons',
+    label: 'External Hackathons',
+    icon: 'upload',
+    permission: PERMISSIONS.HACKATHONS,
+  },
   { to: '/admin/themes', label: 'Themes', icon: 'sparkles', permission: PERMISSIONS.THEMES },
   {
     to: '/admin/evaluation-requirements',
