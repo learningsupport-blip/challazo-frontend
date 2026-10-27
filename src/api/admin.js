@@ -101,7 +101,7 @@ export const adminApi = {
 
   /**
    * Super Admin: how video AI analysis is split between the personal and the
-   * company evaluator service — personal_share, company_share, next_index,
+   * company evaluator service — mode (personal, company or both), personal_share, company_share, next_index,
    * sequence, summary, scope and workers (key, name, project_id, configured,
    * share, url). GitHub AI evaluation is not part of it.
    */
@@ -109,7 +109,8 @@ export const adminApi = {
     api.get('/super-admin/settings/evaluation-routing', options),
 
   /**
-   * `{ personal_share, company_share }`, each 0–20 with at least one above 0
+   * `{ mode, personal_share, company_share }`; mode is personal, company or
+   * both. Shares are 0–20 and both must be above 0 for mode both
    * (400 otherwise, reason in `detail`). Same shape back as the GET; saving
    * restarts the pattern from its first video.
    */
