@@ -13,6 +13,9 @@ function formatScore(value) {
 
 /**
  * Evaluator sidebar: preview total, optional AI override, remarks, submit.
+ *
+ * With `manualEvaluation` (AI failed or never ran) there is no AI score to
+ * override, so the toggle goes and the AI fields are always scored here.
  */
 export default function SubmitForReviewCard({
   preview,
@@ -22,6 +25,8 @@ export default function SubmitForReviewCard({
   canEditManual,
   canSubmit,
   manualComplete,
+  manualEvaluation = false,
+  handAiComplete = true,
   overrideEnabled,
   onOverrideEnabledChange,
   aiOverrideByFieldKey,
@@ -33,6 +38,7 @@ export default function SubmitForReviewCard({
   finalScore,
 }) {
   const aiMetrics = (scorecardBase?.metrics || []).filter((metric) => metric.scoring_mode === 'ai')
+  const showAiInputs = manualEvaluation || overrideEnabled
 
   return (
     <Card className="submit-for-review-card">
@@ -62,24 +68,33 @@ export default function SubmitForReviewCard({
         {canEditManual ? (
           <>
             <div className="submit-for-review-card__override">
-              <label className="submit-for-review-card__override-toggle">
-                <input
-                  type="checkbox"
-                  checked={overrideEnabled}
-                  onChange={(event) => onOverrideEnabledChange(event.target.checked)}
-                />
-                <span className="submit-for-review-card__override-track">
-                  <span />
-                </span>
-                <strong>Override Scores</strong>
-              </label>
+              {manualEvaluation ? (
+                <strong>Score AI fields by hand</strong>
+              ) : (
+                <label className="submit-for-review-card__override-toggle">
+                  <input
+                    type="checkbox"
+                    checked={overrideEnabled}
+                    onChange={(event) => onOverrideEnabledChange(event.target.checked)}
+                  />
+                  <span className="submit-for-review-card__override-track">
+                    <span />
+                  </span>
+                  <strong>Override Scores</strong>
+                </label>
+              )}
 
-              {overrideEnabled ? (
+              {showAiInputs ? (
                 <div className="submit-for-review-card__override-fields">
                   {aiMetrics.map((metric) => (
                     <Input
                       key={metric.field_key}
-                      label={metric.field_label || metric.field_key}
+                      label={
+                        manualEvaluation
+                          ? `${metric.field_label || metric.field_key} (0–${metric.max_score})`
+                          : metric.field_label || metric.field_key
+                      }
+                      required={manualEvaluation && Number(metric.weight) > 0}
                       type="number"
                       min={0}
                       max={metric.max_score}
@@ -125,6 +140,11 @@ export default function SubmitForReviewCard({
               {reviewStatus === 'changes_requested' ? 'Resubmit for review' : 'Submit for review'}
             </Button>
 
+            {manualEvaluation && !handAiComplete ? (
+              <p className="submit-for-review-card__hint">
+                Give every AI field a score from 0 to its maximum to enable submit.
+              </p>
+            ) : null}
             {!manualComplete ? (
               <p className="submit-for-review-card__hint">
                 Finish GitHub and MVP scoring to enable submit.

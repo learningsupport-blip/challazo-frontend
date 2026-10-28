@@ -7,7 +7,9 @@ import { useAsync } from '../../hooks/useAsync'
 import { usePolling } from '../../hooks/usePolling'
 import {
   aiOverridesFromScorecard,
+  areHandAiScoresComplete,
   buildAiOverridesPayload,
+  buildHandEvaluationFieldScores,
   buildManualMetricsPayload,
   draftFromScorecard,
   getGithubMetric,
@@ -68,6 +70,14 @@ export default function EvaluatorSubmissionDetailPage() {
   const [aiOverrideByFieldKey, setAiOverrideByFieldKey] = useState({})
 
   const reviewStatus = reviewOverride?.review_status ?? submission?.review_status ?? 'none'
+  // A hand-scored submit answers with status completed; polling may already have
+  // stopped on failed, so the submit response wins until the next fetch.
+  const status = reviewOverride?.status ?? submission?.status
+  const evaluationSource = reviewOverride?.evaluation_source ?? submission?.evaluation_source
+  // AI failed or never ran, the review is open and there is a rubric: the
+  // evaluator scores every field by hand, AI fields included.
+  const manualEvaluation =
+    Boolean(submission?.manual_evaluation_allowed) && ['failed', 'uploaded'].includes(status)
   const scorecardBase = useMemo(
     () => reviewOverride?.scorecard || getScorecard(submission),
     [reviewOverride, submission],
@@ -110,14 +120,19 @@ export default function EvaluatorSubmissionDetailPage() {
   const preview = useMemo(
     () =>
       previewScorecard(scorecardBase, draftByFieldKey, {
-        overrideAi: overrideEnabled,
+        // Hand scoring: the AI inputs are the only source of those scores.
+        overrideAi: overrideEnabled || manualEvaluation,
         aiOverrideByFieldKey,
       }),
-    [scorecardBase, draftByFieldKey, overrideEnabled, aiOverrideByFieldKey],
+    [scorecardBase, draftByFieldKey, overrideEnabled, manualEvaluation, aiOverrideByFieldKey],
   )
   const manualComplete = useMemo(
     () => isManualScoringComplete(scorecardBase, draftByFieldKey),
     [scorecardBase, draftByFieldKey],
+  )
+  const handAiComplete = useMemo(
+    () => areHandAiScoresComplete(scorecardBase, aiOverrideByFieldKey),
+    [scorecardBase, aiOverrideByFieldKey],
   )
 
   const videoUrl = submission
@@ -147,18 +162,35 @@ export default function EvaluatorSubmissionDetailPage() {
       setActionError('Complete all manual metrics before submitting for review.')
       return
     }
+    if (manualEvaluation && !handAiComplete) {
+      setActionError('Score every field, each from 0 to its maximum, before submitting for review.')
+      return
+    }
     setAction('submitting')
     setActionError('')
     setActionMessage('')
     try {
-      const updated = await evaluationApi.submitForAdminReview(submission.id, {
-        manual_metrics: buildManualMetricsPayload(scorecardBase, draftByFieldKey),
-        evaluator_notes: notes.trim() || null,
-        override_ai_scores: overrideEnabled,
-        ai_overrides: overrideEnabled
-          ? buildAiOverridesPayload(scorecardBase, aiOverrideByFieldKey)
-          : undefined,
-      })
+      const updated = await evaluationApi.submitForAdminReview(
+        submission.id,
+        manualEvaluation
+          ? {
+              manual_evaluation: true,
+              field_scores: buildHandEvaluationFieldScores(
+                scorecardBase,
+                aiOverrideByFieldKey,
+                draftByFieldKey,
+              ),
+              evaluator_notes: notes.trim() || null,
+            }
+          : {
+              manual_metrics: buildManualMetricsPayload(scorecardBase, draftByFieldKey),
+              evaluator_notes: notes.trim() || null,
+              override_ai_scores: overrideEnabled,
+              ai_overrides: overrideEnabled
+                ? buildAiOverridesPayload(scorecardBase, aiOverrideByFieldKey)
+                : undefined,
+            },
+      )
       setReviewOverride({
         ...updated,
         review_status: updated.review_status || 'pending_review',
@@ -198,14 +230,18 @@ export default function EvaluatorSubmissionDetailPage() {
 
   const canAnalyze =
     Boolean(submission?.show_ai_evaluation_button) &&
-    ['uploaded', 'failed'].includes(submission?.status)
-  const processing = submission?.status === 'processing'
-  const completed = submission?.status === 'completed'
-  const failed = submission?.status === 'failed'
+    ['uploaded', 'failed'].includes(status)
+  const processing = status === 'processing'
+  const completed = status === 'completed'
+  const failed = status === 'failed'
+  // Hand scoring opens the same score form a finished AI analysis does.
+  const scoreFormOpen = completed || manualEvaluation
+  // A hand-scored submission has no AI report to show.
+  const hasAiReport = completed && evaluationSource !== 'manual'
   const readOnlyReview = ['pending_review', 'approved'].includes(reviewStatus)
   const canEditManual =
-    completed && ['none', 'changes_requested'].includes(reviewStatus) && !processing
-  const canSubmit = canEditManual && manualComplete
+    scoreFormOpen && ['none', 'changes_requested'].includes(reviewStatus) && !processing
+  const canSubmit = canEditManual && manualComplete && (!manualEvaluation || handAiComplete)
   // Round config as a second signal. The submission carries a snapshot of the
   // round's flag, but that snapshot is absent on submissions created before the
   // flag was switched on — and then the panel vanished with no explanation.
@@ -261,7 +297,7 @@ export default function EvaluatorSubmissionDetailPage() {
               .join(' · ')}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <StatusBadge status={submission?.status} />
+            <StatusBadge status={status} />
             <ReviewStatusBadge status={reviewStatus} />
           </div>
         </div>
@@ -296,6 +332,16 @@ export default function EvaluatorSubmissionDetailPage() {
           </Alert>
         </div>
       )}
+      {manualEvaluation && canEditManual && (
+        <div className="mb-4">
+          <Alert variant="info" title="Score this submission by hand">
+            {failed ? 'AI analysis failed' : 'AI analysis has not run'}, so score every field yourself: the
+            AI fields in the sidebar, and GitHub and MVP under Manual metrics. The total uses the rubric
+            weights, and your scorecard still goes to the admin for approval.
+            {canAnalyze ? ' You can also retry AI analysis instead.' : ''}
+          </Alert>
+        </div>
+      )}
       {reviewStatus === 'pending_review' && (
         <div className="mb-4">
           <Alert variant="info" title="Waiting for admin">
@@ -327,7 +373,13 @@ export default function EvaluatorSubmissionDetailPage() {
               <CardBody>
                 <ScorecardBar
                   scorecard={preview}
-                  title={readOnlyReview ? 'Submitted scorecard' : 'Live scorecard preview'}
+                  title={
+                    evaluationSource === 'manual'
+                      ? 'Manual evaluation'
+                      : readOnlyReview
+                        ? 'Submitted scorecard'
+                        : 'Live scorecard preview'
+                  }
                 />
               </CardBody>
             </Card>
@@ -402,7 +454,7 @@ export default function EvaluatorSubmissionDetailPage() {
             </div>
           </Accordion>
 
-          {(completed || processing) && (
+          {(hasAiReport || processing) && (
             <Accordion
               title="AI metrics"
               description="Read-only scores filled by AI evaluation."
@@ -448,7 +500,7 @@ export default function EvaluatorSubmissionDetailPage() {
             />
           )}
 
-          {completed && scorecardBase && (
+          {scoreFormOpen && scorecardBase && (
             <Accordion
               title="Manual metrics"
               description="Score GitHub and MVP features. Total updates live above."
@@ -479,7 +531,7 @@ export default function EvaluatorSubmissionDetailPage() {
             </Accordion>
           )}
 
-          {completed && (
+          {hasAiReport && (
             <SubmissionReport
               submissionId={submission.id}
               collapsible
@@ -505,7 +557,7 @@ export default function EvaluatorSubmissionDetailPage() {
               </div>
               <div className="row-between">
                 <span className="text-sm text-muted">Status</span>
-                <StatusBadge status={submission?.status} />
+                <StatusBadge status={status} />
               </div>
 
               {canAnalyze && (
@@ -540,7 +592,7 @@ export default function EvaluatorSubmissionDetailPage() {
                 </Alert>
               )}
 
-              {completed && (
+              {hasAiReport && (
                 <Button
                   type="button"
                   variant="secondary"
@@ -555,7 +607,7 @@ export default function EvaluatorSubmissionDetailPage() {
             </CardBody>
           </Card>
 
-          {completed && (
+          {scoreFormOpen && (
             <SubmitForReviewCard
               preview={preview}
               scorecardBase={scorecardBase}
@@ -564,6 +616,8 @@ export default function EvaluatorSubmissionDetailPage() {
               canEditManual={canEditManual}
               canSubmit={canSubmit}
               manualComplete={manualComplete}
+              manualEvaluation={manualEvaluation}
+              handAiComplete={handAiComplete}
               overrideEnabled={overrideEnabled}
               onOverrideEnabledChange={setOverrideEnabled}
               aiOverrideByFieldKey={aiOverrideByFieldKey}

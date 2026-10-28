@@ -295,11 +295,23 @@ export const evaluationApi = {
    * Evaluator only: submit scorecard manual metrics (preferred) or legacy final_score.
    * Pass either a payload object `{ manual_metrics, evaluator_notes }` or
    * legacy `(score, notes)` arguments.
+   *
+   * Hand scoring when AI failed or never ran: `{ manual_evaluation: true,
+   * field_scores, evaluator_notes }`. field_scores holds every weighted field —
+   * `{ field_key, score }` for AI fields, `{ field_key, segments }` for GitHub
+   * and MVP. The server computes the total, so nothing else is sent with it.
    */
   submitForAdminReview: async (submissionId, scoreOrPayload, notes, options) => {
     let body
     let requestOptions = options
-    if (scoreOrPayload && typeof scoreOrPayload === 'object' && !Array.isArray(scoreOrPayload)) {
+    if (scoreOrPayload?.manual_evaluation) {
+      body = {
+        manual_evaluation: true,
+        field_scores: scoreOrPayload.field_scores,
+        evaluator_notes: scoreOrPayload.evaluator_notes ?? null,
+      }
+      requestOptions = notes && typeof notes === 'object' ? notes : options
+    } else if (scoreOrPayload && typeof scoreOrPayload === 'object' && !Array.isArray(scoreOrPayload)) {
       body = {
         manual_metrics: scoreOrPayload.manual_metrics,
         evaluator_notes: scoreOrPayload.evaluator_notes ?? null,

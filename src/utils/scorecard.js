@@ -647,6 +647,29 @@ export function buildAiOverridesPayload(scorecard, aiOverrideByFieldKey = {}) {
     .filter((item) => Number.isFinite(item.score))
 }
 
+/**
+ * Hand scores for AI fields when AI analysis failed or never ran: every
+ * weighted AI field needs a number from 0 to its max_score.
+ */
+export function areHandAiScoresComplete(scorecard, scoreByFieldKey = {}) {
+  return (scorecard?.metrics || [])
+    .filter((metric) => metric.scoring_mode === 'ai' && Number(metric.weight) > 0)
+    .every((metric) => {
+      const raw = scoreByFieldKey[metric.field_key]
+      if (raw == null || raw === '') return false
+      const score = Number(raw)
+      return Number.isFinite(score) && score >= 0 && score <= Number(metric.max_score)
+    })
+}
+
+/** field_scores for a hand evaluation: AI fields by number, GitHub / MVP by segments. */
+export function buildHandEvaluationFieldScores(scorecard, scoreByFieldKey = {}, draftByFieldKey = {}) {
+  return [
+    ...buildAiOverridesPayload(scorecard, scoreByFieldKey),
+    ...buildManualMetricsPayload(scorecard, draftByFieldKey),
+  ]
+}
+
 /** Build API manual_metrics payload from draft + metric defs. */
 export function buildManualMetricsPayload(scorecard, draftByFieldKey = {}) {
   return (scorecard?.metrics || [])
