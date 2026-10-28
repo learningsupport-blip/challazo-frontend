@@ -2,6 +2,7 @@ import { Navigate, Outlet } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { COMPLETE_PROFILE_PATH, needsProfileCompletion } from '../../utils/access'
 import { useDropSurface } from '../drop/useDropSurface'
+import { MobileNoticeBanner } from './DesktopOnly'
 import Navbar from './Navbar'
 import Footer from './Footer'
 
@@ -26,6 +27,7 @@ export default function Layout() {
     <div className="drop app-shell">
       <Navbar />
       <div className="app-content">
+        <MobileNoticeBanner />
         <main className="grow">
           <Outlet />
         </main>

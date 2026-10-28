@@ -1,9 +1,10 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useScreenRecorder } from '../../hooks/useScreenRecorder'
 import { formatDuration, formatFileSize } from '../../utils/format'
 import Button from '../ui/Button'
 import Icon from '../ui/Icon'
 import Alert from '../ui/Alert'
+import DemoGuidelinesDialog from './DemoGuidelinesDialog'
 import NetworkIndicator from './NetworkIndicator'
 
 const AUDIO_STATUS = {
@@ -35,6 +36,13 @@ export default function ScreenRecorder({ onChange, disabled = false }) {
     stop,
     reset,
   } = useScreenRecorder()
+
+  // Every recording starts from the guidelines dialog, never straight from the button.
+  const [guidelinesOpen, setGuidelinesOpen] = useState(false)
+  const acceptGuidelines = () => {
+    setGuidelinesOpen(false)
+    start()
+  }
 
   const liveVideoRef = useRef(null)
   const onChangeRef = useRef(onChange)
@@ -181,7 +189,7 @@ export default function ScreenRecorder({ onChange, disabled = false }) {
           {status === 'idle' && (
             <Button
               variant="accent"
-              onClick={start}
+              onClick={() => setGuidelinesOpen(true)}
               disabled={disabled}
               leftIcon={<Icon name="mic" size={18} />}
             >
@@ -190,6 +198,11 @@ export default function ScreenRecorder({ onChange, disabled = false }) {
           )}
         </div>
       </div>
+      <DemoGuidelinesDialog
+        open={guidelinesOpen}
+        onAccept={acceptGuidelines}
+        onCancel={() => setGuidelinesOpen(false)}
+      />
     </div>
   )
 }

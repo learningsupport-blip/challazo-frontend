@@ -12,6 +12,7 @@ import {
 } from './utils/access'
 import { useAuth } from './hooks/useAuth'
 import { ROLES } from './utils/constants'
+import DesktopOnly from './components/layout/DesktopOnly'
 import Layout from './components/layout/Layout'
 import CompleteProfileRoute from './components/routing/CompleteProfileRoute'
 import ProtectedRoute from './components/routing/ProtectedRoute'
@@ -233,7 +234,15 @@ export default function App() {
 
               <Route element={<ProtectedRoute roles={[ROLES.STUDENT]} />}>
                 <Route path="/student" element={<StudentDashboard />} />
-                <Route path="/student/submission" element={<NewEvaluationPage />} />
+                {/* No submissions from a phone or tablet. */}
+                <Route
+                  path="/student/submission"
+                  element={
+                    <DesktopOnly backTo="/student">
+                      <NewEvaluationPage />
+                    </DesktopOnly>
+                  }
+                />
                 <Route
                   path="/student/new"
                   element={<Navigate to="/student/submission" replace />}

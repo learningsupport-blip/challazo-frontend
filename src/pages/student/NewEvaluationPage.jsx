@@ -28,6 +28,12 @@ const ALL_STEPS = [
   { id: 'submit', label: 'Submit', short: 'Submit' },
 ]
 
+/**
+ * Uploading a ready-made video is switched off for now: every demo must be
+ * recorded in the browser. Set back to true to offer "Upload video" again.
+ */
+const VIDEO_UPLOAD_ENABLED = false
+
 const DEFAULT_VIDEO_ACCEPT = 'video/webm,video/mp4,video/quicktime,.webm,.mp4,.mov'
 const DEFAULT_MAX_VIDEO_BYTES = 500 * 1024 * 1024
 const DEFAULT_VIDEO_MIME_TYPES = ['video/webm', 'video/mp4', 'video/quicktime']
@@ -364,6 +370,7 @@ export default function NewEvaluationPage() {
   }
 
   const chooseVideoSource = (source) => {
+    if (source === 'uploaded' && !VIDEO_UPLOAD_ENABLED) return
     if (videoSource !== source) setDemoFile(null, source)
     else setVideoSource(source)
   }
@@ -423,7 +430,7 @@ export default function NewEvaluationPage() {
   const handleVideoFilePicked = (event) => {
     const pickedFile = event.target.files?.[0]
     event.target.value = ''
-    if (!pickedFile) return
+    if (!pickedFile || !VIDEO_UPLOAD_ENABLED) return
 
     const extension = pickedFile.name.includes('.')
       ? `.${pickedFile.name.split('.').pop().toLowerCase()}`
@@ -834,12 +841,17 @@ export default function NewEvaluationPage() {
                 type="button"
                 className={videoSource === 'uploaded' ? 'is-active' : ''}
                 onClick={() => chooseVideoSource('uploaded')}
-                disabled={busy}
+                disabled={busy || !VIDEO_UPLOAD_ENABLED}
+                title={VIDEO_UPLOAD_ENABLED ? undefined : 'Uploading a video is not available right now.'}
               >
                 <span><Icon name="upload" size={22} /></span>
                 <div>
                   <strong>Upload video</strong>
-                  <small>Choose a previously recorded demo from your device.</small>
+                  <small>
+                    {VIDEO_UPLOAD_ENABLED
+                      ? 'Choose a previously recorded demo from your device.'
+                      : 'Not available right now. Please record your demo in the browser.'}
+                  </small>
                 </div>
                 {videoSource === 'uploaded' && <Icon name="checkCircle" size={19} />}
               </button>
@@ -848,8 +860,14 @@ export default function NewEvaluationPage() {
             {!videoSource && (
               <div className="demo-source-empty">
                 <Icon name="video" size={28} />
-                <strong>How would you like to add your demo?</strong>
-                <p>Both options use the same secure upload and evaluation process.</p>
+                <strong>
+                  {VIDEO_UPLOAD_ENABLED ? 'How would you like to add your demo?' : 'Record your demo to continue'}
+                </strong>
+                <p>
+                  {VIDEO_UPLOAD_ENABLED
+                    ? 'Both options use the same secure upload and evaluation process.'
+                    : 'Choose Record demo above to share your screen and record in the browser.'}
+                </p>
               </div>
             )}
 

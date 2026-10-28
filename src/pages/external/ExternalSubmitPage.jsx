@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { externalHackathonsPublicApi } from '../../api/externalHackathons'
 import { BrandLockup } from '../../components/brand/BrandMark'
+import { DesktopRequiredNotice } from '../../components/layout/DesktopOnly'
 import { WRAP_NARROW } from '../../components/drop/theme'
 import { useDropSurface } from '../../components/drop/useDropSurface'
 import Alert from '../../components/ui/Alert'
@@ -11,6 +12,7 @@ import Icon from '../../components/ui/Icon'
 import Input, { Select, Textarea } from '../../components/ui/Input'
 import { LoadingBlock } from '../../components/ui/Spinner'
 import { useAsync } from '../../hooks/useAsync'
+import { isHandheldDevice } from '../../utils/device'
 import { formatDateTime, formatFileSize } from '../../utils/format'
 import { uploadVideoToStorage } from '../../utils/videoUpload'
 
@@ -95,6 +97,7 @@ export default function ExternalSubmitPage() {
   const uploadRef = useRef(null)
   // Re-checked every half minute so the deadline and link expiry close the form on time.
   const [now, setNow] = useState(() => Date.now())
+  const [handheld] = useState(isHandheldDevice)
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 30_000)
     return () => clearInterval(timer)
@@ -212,6 +215,21 @@ export default function ExternalSubmitPage() {
       setSubmitting(false)
       setProgress(null)
     }
+  }
+
+  // No submissions from a phone or tablet; the signed link still works on a laptop until it expires.
+  if (handheld) {
+    return (
+      <Shell>
+        <DesktopRequiredNotice
+          steps={[
+            'Copy the link below and open it on your laptop or desktop (latest Chrome or Edge works best).',
+            'Or open the submission form again from your team page on a laptop.',
+            'Complete and submit your project there.',
+          ]}
+        />
+      </Shell>
+    )
   }
 
   if (loading && !hackathon) {
