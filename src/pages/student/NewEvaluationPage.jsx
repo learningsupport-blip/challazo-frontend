@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { evaluationApi } from '../../api/evaluation'
-import { evaluationRequirementsApi } from '../../api/evaluationRequirements'
 import { hackathonsApi } from '../../api/hackathons'
 import ParticipationPanel from '../../components/hackathons/ParticipationPanel'
 import { participationErrorMessage } from '../../components/hackathons/errorCodes'
@@ -165,11 +164,22 @@ function buildLegacyDetails(requirement, answers) {
   }
 }
 
+function roundIndexOf(round, fallback) {
+  return Number.isInteger(round?.round_index) ? round.round_index : fallback
+}
+
+function findTimelineRound(hackathon, roundIndex) {
+  const timeline = hackathon?.timeline || []
+  return (
+    timeline.find((round, index) => roundIndexOf(round, index) === roundIndex) || null
+  )
+}
+
 function isVideoRequired(hackathon, roundIndex, participation) {
   if (participation && typeof participation.working_demo_video_required === 'boolean') {
     return participation.working_demo_video_required
   }
-  const round = hackathon?.timeline?.[roundIndex]
+  const round = findTimelineRound(hackathon, roundIndex)
   if (round && typeof round.working_demo_video_required === 'boolean') {
     return round.working_demo_video_required
   }
@@ -248,15 +258,6 @@ function RequirementField({ field, value, error, disabled, onChange }) {
 export default function NewEvaluationPage() {
   const navigate = useNavigate()
   const {
-    data: requirements,
-    loading: requirementsLoading,
-    error: requirementsError,
-    reload: reloadRequirements,
-  } = useAsync(
-    (opts) => evaluationRequirementsApi.list(opts),
-    { key: queryKeys.evaluationRequirements, staleTime: 60_000 },
-  )
-  const {
     data: hackathons,
     loading: hackathonsLoading,
     error: hackathonsError,
@@ -282,7 +283,6 @@ export default function NewEvaluationPage() {
   const location = useLocation()
   const [roundIndex, setRoundIndex] = useState(() => Number(location.state?.roundIndex) || 0)
   const [selectedThemeId, setSelectedThemeId] = useState('')
-  const [selectedRequirementId, setSelectedRequirementId] = useState('')
   const [answers, setAnswers] = useState({})
   const [answerErrors, setAnswerErrors] = useState({})
   const [file, setFile] = useState(null)
@@ -302,13 +302,6 @@ export default function NewEvaluationPage() {
     [],
   )
 
-  const activeRequirement = useMemo(
-    () =>
-      requirements?.find((requirement) => requirement.id === selectedRequirementId) ||
-      requirements?.[0] ||
-      null,
-    [requirements, selectedRequirementId],
-  )
   const activeHackathon = useMemo(
     () =>
       hackathons?.find((hackathon) => hackathon.id === selectedHackathonId) ||
@@ -323,7 +316,31 @@ export default function NewEvaluationPage() {
       null,
     [activeHackathon, selectedThemeId],
   )
+  const activeRound = useMemo(
+    () => findTimelineRound(activeHackathon, roundIndex) || activeHackathon?.timeline?.[0] || null,
+    [activeHackathon, roundIndex],
+  )
+  const activeRequirement = activeRound?.evaluation_requirement || null
   const videoRequired = isVideoRequired(activeHackathon, roundIndex, participation)
+
+  useEffect(() => {
+    if (selectedHackathonId || !hackathons?.length) return
+    const requestedId = location.state?.hackathonId
+    const match = hackathons.find((hackathon) => hackathon.id === requestedId)
+    setSelectedHackathonId((match || hackathons[0]).id)
+  }, [hackathons, location.state, selectedHackathonId])
+
+  useEffect(() => {
+    const timeline = activeHackathon?.timeline || []
+    if (!timeline.length) return
+    const keys = timeline.map((round, index) => roundIndexOf(round, index))
+    if (!keys.includes(roundIndex)) setRoundIndex(keys[0])
+  }, [activeHackathon, roundIndex])
+
+  useEffect(() => {
+    setAnswers({})
+    setAnswerErrors({})
+  }, [activeRequirement?.id])
   const steps = useMemo(
     () =>
       videoRequired
@@ -509,7 +526,6 @@ export default function NewEvaluationPage() {
         round_index: roundIndex,
         theme_id: activeTheme.id,
         video_source: file ? videoSource : null,
-        evaluation_requirement_id: activeRequirement.id,
         field_answers: legacy.field_answers,
       }, {
         onStageChange: setPhase,
@@ -628,25 +644,18 @@ export default function NewEvaluationPage() {
             <span className="submission-panel__icon"><Icon name="clipboard" size={22} /></span>
           </CardHeader>
           <CardBody className="stack-lg">
-            {requirementsLoading || hackathonsLoading ? (
+            {hackathonsLoading ? (
               <LoadingBlock label="Loading submission requirements…" />
-            ) : requirementsError || hackathonsError ? (
+            ) : hackathonsError ? (
               <Alert variant="danger" title="Requirements could not be loaded">
-                {requirementsError?.message || hackathonsError?.message}
+                {hackathonsError.message}
                 <div className="submission-inline-action">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      reloadRequirements()
-                      reloadHackathons()
-                    }}
-                  >
+                  <Button variant="ghost" size="sm" onClick={() => reloadHackathons()}>
                     Try again
                   </Button>
                 </div>
               </Alert>
-            ) : !activeRequirement || !activeHackathon ? (
+            ) : !hackathons?.length ? (
               <Alert variant="warning" title="No requirement configured">
                 An administrator must configure a hackathon and evaluation requirement before you can submit.
               </Alert>
@@ -657,11 +666,13 @@ export default function NewEvaluationPage() {
                   required
                   value={activeHackathon.id}
                   onChange={(event) => {
+                    const next = hackathons.find((hackathon) => hackathon.id === event.target.value)
+                    const firstRound = next?.timeline?.[0]
                     setSelectedHackathonId(event.target.value)
                     setSelectedThemeId('')
                     setCanSubmitHackathon(false)
                     setParticipation(null)
-                    setRoundIndex(0)
+                    setRoundIndex(roundIndexOf(firstRound, 0))
                     setError('')
                   }}
                   hint="Your submission will appear in this hackathon’s admin review queue."
@@ -688,11 +699,14 @@ export default function NewEvaluationPage() {
                     }}
                     hint="Each round is enrolled in and submitted to separately."
                   >
-                    {activeHackathon.timeline.map((round, index) => (
-                      <option key={`${round.title}-${index}`} value={String(index)}>
-                        {`Round ${index + 1} · ${round.title}`}
-                      </option>
-                    ))}
+                    {activeHackathon.timeline.map((round, index) => {
+                      const indexValue = roundIndexOf(round, index)
+                      return (
+                        <option key={`${round.title}-${indexValue}`} value={String(indexValue)}>
+                          {`Round ${indexValue + 1} · ${round.title}`}
+                        </option>
+                      )
+                    })}
                   </Select>
                 )}
 
@@ -700,7 +714,7 @@ export default function NewEvaluationPage() {
                   key={`${activeHackathon.id}:${roundIndex}`}
                   hackathonId={activeHackathon.id}
                   roundIndex={roundIndex}
-                  round={activeHackathon.timeline?.[roundIndex]}
+                  round={activeRound}
                   onState={(data) => {
                     setParticipation(data)
                     setCanSubmitHackathon(Boolean(data?.can_submit))
@@ -741,32 +755,22 @@ export default function NewEvaluationPage() {
                   </Alert>
                 ) : null}
 
-                {canSubmitHackathon && (requirements?.length || 0) > 1 && (
-                  <Select
-                    label="Evaluation requirement"
-                    value={activeRequirement.id}
-                    onChange={(event) => {
-                      setSelectedRequirementId(event.target.value)
-                      setAnswerErrors({})
-                      setError('')
-                    }}
-                    hint="Choose the field set assigned to your submission round."
-                  >
-                    {requirements.map((requirement) => (
-                      <option value={requirement.id} key={requirement.id}>
-                        {requirement.name}
-                      </option>
-                    ))}
-                  </Select>
+                {canSubmitHackathon && !activeRequirement && (
+                  <Alert variant="warning" title="No requirement configured">
+                    This round does not have an evaluation requirement yet.
+                  </Alert>
                 )}
 
-                {canSubmitHackathon && (
+                {canSubmitHackathon && activeRequirement && (
                   <>
                     <div className="submission-requirement-banner">
                       <span><Icon name="clipboard" size={19} /></span>
                       <div>
                         <strong>{activeRequirement.name}</strong>
-                        <p>{activeRequirement.description || 'Complete the fields below.'}</p>
+                        <p>
+                          {activeRequirement.description || 'Complete the fields below.'}
+                          {' '}This requirement is set for the round and cannot be changed.
+                        </p>
                       </div>
                       <small>{activeRequirement.fields?.length || 0} fields</small>
                     </div>
@@ -802,7 +806,7 @@ export default function NewEvaluationPage() {
             <Button
               variant="accent"
               size="lg"
-              disabled={!activeRequirement || !activeHackathon || !activeTheme || requirementsLoading || hackathonsLoading}
+              disabled={!activeRequirement || !activeHackathon || !activeTheme || hackathonsLoading}
               onClick={completeRequirements}
               rightIcon={<Icon name="arrowRight" size={18} />}
             >
