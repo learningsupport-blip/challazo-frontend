@@ -104,7 +104,10 @@ export default function HackathonDetailPage() {
     error,
     reload: reloadHackathon,
   } = useAsync(() => hackathonsApi.get(hackathonId))
-  const { data: requirements } = useAsync(() => evaluationRequirementsApi.list())
+  const { data: requirements } = useAsync(
+    () => evaluationRequirementsApi.list(),
+    { enabled: isAdmin },
+  )
   const [publishingRound, setPublishingRound] = useState('')
   const [publishError, setPublishError] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -203,6 +206,7 @@ export default function HackathonDetailPage() {
     .map((round, index) => ({ round, index }))
     .filter(({ round }) => isAdmin || isEvaluator || round.leaderboard_published)
   const prizePool = totalPrizePool(hackathon.prizes)
+  const releasedThemes = Array.isArray(hackathon.themes) ? hackathon.themes : []
   const summary = [
     {
       icon: 'calendar',
@@ -338,6 +342,43 @@ export default function HackathonDetailPage() {
       {/* Everything below the summary is an accordion, so the page opens as a
           short index of the hackathon and each part is expanded on demand. */}
       <div className="flex flex-col gap-4">
+        <Accordion
+          icon="sparkles"
+          title="Themes Released"
+          description="Themes students can build on for this hackathon."
+          badge={releasedThemes.length ? String(releasedThemes.length) : undefined}
+        >
+          {releasedThemes.length ? (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {releasedThemes.map((theme) => (
+                <article
+                  key={theme.id || theme.name}
+                  className="rounded-drop border border-hairline bg-raised p-5"
+                >
+                  <div className="flex items-start gap-3">
+                    <span className="grid size-10 shrink-0 place-items-center rounded-drop border border-volt-edge bg-volt-tint text-volt-ink">
+                      <Icon name="sparkles" size={18} />
+                    </span>
+                    <div className="min-w-0">
+                      <h3 className="text-[16px] font-semibold tracking-[-0.015em] text-ink">
+                        {theme.name}
+                      </h3>
+                      <p className="mt-1.5 text-[14px] leading-relaxed text-muted">
+                        {theme.description || 'No description provided.'}
+                      </p>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 rounded-drop border border-dashed border-hairline px-4 py-8 text-muted">
+              <Icon name="sparkles" size={22} />
+              <span className="text-[14px]">No themes have been released for this hackathon yet.</span>
+            </div>
+          )}
+        </Accordion>
+
         {/* Enrollment is the student's reason for being here, so their rounds
             open with the page rather than behind a click. */}
         {isStudent && !!hackathon.timeline?.length && (
