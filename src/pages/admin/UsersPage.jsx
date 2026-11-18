@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { adminApi } from '../../api/admin'
+import { universitiesApi } from '../../api/universities'
 import { authErrorCode } from '../../api/authErrors'
 import { useAsync } from '../../hooks/useAsync'
 import { useAuth } from '../../hooks/useAuth'
@@ -41,15 +42,38 @@ const matchesSearch = (user, needle) => {
   )
 }
 
+/** The id of the college a student belongs to, from the flat field or the object. */
+const universityIdOf = (user) => String(user.university_id || user.university?.id || '')
+
+/**
+ * The College filter's options. Labels are the university name; two colleges
+ * sharing a name fall back to the backend's `display_label` ("NIAT, Hyderabad")
+ * so they can be told apart.
+ */
+function toCollegeOptions(payload) {
+  const list = Array.isArray(payload) ? payload : Array.isArray(payload?.items) ? payload.items : []
+  const colleges = list.filter((college) => college?.id !== undefined && college?.id !== null)
+  const nameCount = new Map()
+  colleges.forEach((college) => nameCount.set(college.name, (nameCount.get(college.name) || 0) + 1))
+  return colleges.map((college) => ({
+    value: String(college.id),
+    label:
+      (nameCount.get(college.name) > 1 && college.display_label) ||
+      college.name ||
+      college.display_label ||
+      String(college.id),
+  }))
+}
+
 /**
  * One page of students in a single shape, whichever backend answered.
  *
  * A paging backend returns `{ items, total }` already filtered to students and
  * searched, so it is used as is. An older one ignores the params and returns
- * every user as an array; then the students are picked out, searched and
- * sliced here, newest first like the paged response.
+ * every user as an array; then the students are picked out, narrowed to the
+ * selected college, searched and sliced here, newest first like the paged response.
  */
-function toStudentPage(payload, page, search) {
+function toStudentPage(payload, page, search, universityId) {
   if (!Array.isArray(payload)) {
     return {
       rows: Array.isArray(payload?.items) ? payload.items : [],
@@ -59,6 +83,7 @@ function toStudentPage(payload, page, search) {
   const needle = search.toLowerCase()
   const students = payload
     .filter((user) => user.role === 'student')
+    .filter((user) => !universityId || universityIdOf(user) === universityId)
     .filter((user) => !needle || matchesSearch(user, needle))
     .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
   const start = (page - 1) * PAGE_SIZE
@@ -93,6 +118,26 @@ export default function UsersPage() {
   const [query, setQuery] = useState('')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
+  // The selected college's id; '' is "All colleges". Held here so it
+  // survives search and page changes.
+  const [universityId, setUniversityId] = useState('')
+
+  const {
+    data: universityData,
+    loading: universitiesLoading,
+    error: universitiesError,
+  } = useAsync((options) => universitiesApi.list(options), {
+    key: queryKeys.universities,
+    staleTime: 30_000,
+  })
+  const colleges = toCollegeOptions(universityData)
+  const collegesPending = !universityData && universitiesLoading
+  const collegesFailed = !universityData && Boolean(universitiesError)
+
+  const changeCollege = (value) => {
+    setUniversityId(value)
+    setPage(1)
+  }
 
   // Search once typing pauses, from the first page.
   useEffect(() => {
@@ -103,18 +148,24 @@ export default function UsersPage() {
     return () => clearTimeout(timer)
   }, [query])
 
-  // Keyed per page and search — never queryKeys.adminUsers, which the
+  // Keyed per page, search and college — never queryKeys.adminUsers, which the
   // dashboard prefetch fills with the full user array.
-  const pageKey = queryKeys.adminStudentsPage(page, search)
+  const pageKey = queryKeys.adminStudentsPage(page, search, universityId)
   const { data, loading, error, reload, setData } = useAsync(
     async (opts) => {
       const payload = await adminApi.getUsersPage(
-        { page, page_size: PAGE_SIZE, role: 'student', q: search || undefined },
+        {
+          page,
+          page_size: PAGE_SIZE,
+          role: 'student',
+          university_id: universityId || undefined,
+          q: search || undefined,
+        },
         opts,
       )
       // Tagged with its key: on a page change useAsync keeps the previous
       // rows without flagging a load, and the tag is how the table knows to dim.
-      return { key: pageKey, ...toStudentPage(payload, page, search) }
+      return { key: pageKey, ...toStudentPage(payload, page, search, universityId) }
     },
     { key: pageKey, staleTime: 30_000 },
   )
@@ -225,8 +276,8 @@ export default function UsersPage() {
         }
       />
 
-      <div style={{ maxWidth: 360, marginBottom: 20 }}>
-        <div className="input-group">
+      <div className="row" style={{ gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
+        <div className="input-group" style={{ flex: '1 1 260px', maxWidth: 360 }}>
           <input
             className="input"
             placeholder="Search by name, email, ID or mobile"
@@ -242,6 +293,33 @@ export default function UsersPage() {
             <Icon name="search" size={18} />
           </span>
         </div>
+        <select
+          className="select"
+          style={{ flex: '0 1 260px', width: 'auto', minWidth: 200 }}
+          value={colleges.length ? universityId : ''}
+          onChange={(e) => changeCollege(e.target.value)}
+          disabled={!colleges.length}
+          aria-label="Filter by college"
+        >
+          {colleges.length ? (
+            <>
+              <option value="">All colleges</option>
+              {colleges.map((college) => (
+                <option key={college.value} value={college.value}>
+                  {college.label}
+                </option>
+              ))}
+            </>
+          ) : (
+            <option value="">
+              {collegesPending
+                ? 'Loading colleges…'
+                : collegesFailed
+                  ? 'Colleges unavailable'
+                  : 'No colleges available'}
+            </option>
+          )}
+        </select>
       </div>
 
       {error && (
@@ -334,7 +412,13 @@ export default function UsersPage() {
             <EmptyState
               icon="users"
               title="No students found"
-              description={search ? 'Try a different search.' : 'Registered students will appear here.'}
+              description={
+                search
+                  ? 'Try a different search.'
+                  : universityId
+                    ? 'No students are registered under this college yet.'
+                    : 'Registered students will appear here.'
+              }
             />
           </CardBody>
         </Card>

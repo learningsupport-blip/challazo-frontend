@@ -8,7 +8,8 @@ export const adminApi = {
   getUsers: (options) => api.get('/admin/users', options),
 
   /**
-   * One page of users: `page` (1-based), `page_size` (max 100), `role`, `q`.
+   * One page of users: `page` (1-based), `page_size` (max 100), `role`, `q`,
+   * `university_id` (one college's users; an unknown id answers 400).
    * Sending `page` makes the backend answer `{ items, total, page, page_size }`;
    * an older backend ignores the params and still returns the full array.
    * Empty values are left out of the query string.
