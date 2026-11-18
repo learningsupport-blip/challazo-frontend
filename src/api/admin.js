@@ -1,4 +1,4 @@
-import { api } from './client'
+import { api, download } from './client'
 
 export const adminApi = {
   /**
@@ -20,6 +20,19 @@ export const adminApi = {
       if (value !== undefined && value !== null && value !== '') search.set(name, String(value))
     })
     return api.get(`/admin/users?${search}`, options)
+  },
+
+  /**
+   * Download the students matching `university_id` and `q` as a CSV — every
+   * match, not one page, so `page` and `page_size` are never sent. Saved under
+   * the backend's filename, `students.csv` if it sends none. 400 for an
+   * unknown `university_id`. Resolves to the filename used.
+   */
+  exportStudents: ({ university_id, q } = {}, options) => {
+    const search = new URLSearchParams({ role: 'student' })
+    if (university_id) search.set('university_id', String(university_id))
+    if (q) search.set('q', String(q))
+    return download(`/admin/users/export?${search}`, { fallbackName: 'students.csv', ...options })
   },
 
   /**
