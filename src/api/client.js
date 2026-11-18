@@ -304,6 +304,74 @@ export async function request(path, options = {}) {
   return data
 }
 
+/** The filename a Content-Disposition header names, or '' when it names none. */
+function filenameFromDisposition(header) {
+  if (!header) return ''
+  // RFC 5987 form first (filename*=UTF-8''students%20x.csv), then the plain one.
+  const encoded = /filename\*\s*=\s*[^']*'[^']*'([^;]+)/i.exec(header)
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded[1].trim())
+    } catch {
+      // Malformed escape — fall through to the plain form.
+    }
+  }
+  const plain = /filename\s*=\s*("([^"]*)"|[^;]+)/i.exec(header)
+  return plain ? (plain[2] ?? plain[1]).trim() : ''
+}
+
+/**
+ * GET a file and hand it to the browser as a download. Sends the session
+ * cookie like `request`, and fails with the same ApiError (message parsed from
+ * the error body) so callers report it the usual way.
+ *
+ * The saved name comes from Content-Disposition; cross-origin the backend must
+ * list that header in Access-Control-Expose-Headers or the browser hides it
+ * and `fallbackName` is used.
+ *
+ * @param {string} path
+ * @param {object} [options]
+ * @param {string} [options.fallbackName]
+ * @param {AbortSignal} [options.signal]
+ * @returns {Promise<string>} the filename the download was saved under
+ */
+export async function download(path, { fallbackName = 'download', signal } = {}) {
+  let res
+  try {
+    res = await fetch(`${BASE_URL}${path}`, { method: 'GET', credentials: 'include', signal })
+  } catch (err) {
+    if (err.name === 'AbortError') throw err
+    throw new ApiError(
+      'Unable to reach the server. Please check your connection and that the backend is running.',
+      { status: 0 },
+    )
+  }
+
+  if (!res.ok) {
+    if (res.status === 401) notifySessionExpired(path)
+    const data = await parseBody(res)
+    throw new ApiError(extractMessage(data, `Request failed (${res.status})`), {
+      status: res.status,
+      data,
+    })
+  }
+
+  const blob = await res.blob()
+  const filename =
+    filenameFromDisposition(res.headers.get('content-disposition')) || fallbackName
+
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  // Revoked a moment later: some browsers start reading the blob after click().
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+  return filename
+}
+
 export const api = {
   get: (path, options) => request(path, { ...options, method: 'GET' }),
   post: (path, body, options) => request(path, { ...options, method: 'POST', body }),

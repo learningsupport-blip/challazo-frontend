@@ -30,6 +30,9 @@ const PAGE_SIZE = 15
 /** How long typing pauses before the search is sent. */
 const SEARCH_DELAY_MS = 300
 
+/** How long a failed-export toast stays up before dismissing itself. */
+const TOAST_MS = 6000
+
 const digitsOf = (value) => String(value || '').replace(/\D/g, '')
 
 const matchesSearch = (user, needle) => {
@@ -178,6 +181,30 @@ export default function UsersPage() {
   // to the last page that still has rows.
   if (data && !stale && !loading && page > totalPages) setPage(totalPages)
 
+  const [exporting, setExporting] = useState(false)
+  // A failed export's message, shown as a toast; the table is left as it is.
+  const [exportError, setExportError] = useState('')
+
+  useEffect(() => {
+    if (!exportError) return undefined
+    const timer = setTimeout(() => setExportError(''), TOAST_MS)
+    return () => clearTimeout(timer)
+  }, [exportError])
+
+  // Exports every student matching the filters the table is showing — the
+  // sent search, not text still being typed — across all pages.
+  const exportCsv = async () => {
+    setExporting(true)
+    setExportError('')
+    try {
+      await adminApi.exportStudents({ university_id: universityId, q: search })
+    } catch (err) {
+      setExportError(err?.message || 'Unable to export students.')
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const [editing, setEditing] = useState(null)
   // The student whose details are open.
   const [viewing, setViewing] = useState(null)
@@ -320,7 +347,33 @@ export default function UsersPage() {
             </option>
           )}
         </select>
+        <Button
+          variant="secondary"
+          onClick={exportCsv}
+          loading={exporting}
+          disabled={!rows.length || stale}
+          leftIcon={<Icon name="download" size={18} />}
+          title={rows.length ? 'Download the students matching these filters' : 'No students to export'}
+        >
+          {exporting ? 'Exporting…' : 'Export CSV'}
+        </Button>
       </div>
+
+      {exportError && (
+        <div className="fixed bottom-6 right-6 z-[70] w-[min(420px,calc(100vw-48px))] rounded-[var(--radius)] shadow-lg">
+          <Alert variant="danger" title="Export failed" className="pr-11">
+            {exportError}
+          </Alert>
+          <button
+            type="button"
+            className="icon-btn absolute right-2 top-2"
+            onClick={() => setExportError('')}
+            aria-label="Dismiss"
+          >
+            <Icon name="x" size={16} />
+          </button>
+        </div>
+      )}
 
       {error && (
         <div style={{ marginBottom: 20 }}>
